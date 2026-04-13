@@ -73,29 +73,17 @@ class SenMemBuffer:
 
 class ShortMemBuffer:
     """
-    短期缓冲（ShortMemBuffer）：Cell 摘要的索引库与检索池。
-    活跃窗口 + 存储窗口的内存缓存概念。
+    短期缓冲（ShortMemBuffer）：Cell 摘要的统一检索池。
+    MVP 阶段不区分活跃/存储窗口，所有 Cell 均参与检索。
     """
 
-    def __init__(
-        self,
-        active_limit: int = 10,
-        storage_limit: int = 40,
-    ):
-        self.active_limit = active_limit
-        self.storage_limit = storage_limit
+    def __init__(self) -> None:
         self.cells: list[MemoryCell] = []
 
     def add(self, cell: MemoryCell) -> None:
         self.cells.append(cell)
-        # 超限时将最旧 Cell 移出存储窗口逻辑
-        if len(self.cells) > self.storage_limit:
-            self.cells.pop(0)
 
-    def active_cells(self) -> list[MemoryCell]:
-        return self.cells[-self.active_limit :]
-
-    def storage_cells(self) -> list[MemoryCell]:
+    def all_cells(self) -> list[MemoryCell]:
         return self.cells
 
     def get(self, cell_id: str) -> MemoryCell | None:
