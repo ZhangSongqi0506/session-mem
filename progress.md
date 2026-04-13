@@ -18,6 +18,7 @@
   - 使用 planning-with-files skill 创建开发规划文件
   - 确定存储层设计：SQLite + sqlite-vec，模块化可拔插接口
   - 技术方案中新增第 5 章「存储与持久化设计」
+  - 确定技术栈：Python + qwen2.5:72b（语义边界检测独立新会话 + Cell 生成）
 - Files created/modified:
   - `单会话级临时记忆系统（Session-scoped Working Memory）技术方案.md`（修改）
   - `task_plan.md`（创建）

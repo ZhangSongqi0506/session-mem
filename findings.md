@@ -29,6 +29,8 @@
 | 命中即全量 | 避免压缩命中内容导致关键约束丢失 |
 | 时间戳统一 ISO 8601 UTC | 系统收到时间统一可控，避免客户端时钟偏差 |
 | SQLite + sqlite-vec 作为默认存储后端 | 零运维、单文件、适合组件化分发；schema 预留 session_id 支持未来跨会话扩展 |
+| Python 实现 | 与 LangChain 生态天然契合，团队熟练度高 |
+| qwen2.5:72b 作为统一 LLM 后端 | 内网已部署，语义边界检测和 Cell 生成共用同一模型；边界检测以独立新会话调用，不影响主会话 token |
 
 ## Issues Encountered
 | Issue | Resolution |

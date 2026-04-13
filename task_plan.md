@@ -55,10 +55,11 @@ Phase 1
 - **Status:** pending
 
 ## Key Questions
-1. 选择 Python 还是 Node.js 作为主要实现语言？
-2. 1.5B 语义边界检测模型是本地部署（如 ollama/vllm）还是调用云端 API？
-3. 向量索引使用 FAISS、HNSW 还是其他库？
-4. Cell 生成 LLM 使用哪个模型（如 GPT-4o-mini、Claude 3.5 Haiku）？
+1. ✅ 选择 Python 还是 Node.js 作为主要实现语言？ → **Python**
+2. ✅ 1.5B 语义边界检测模型是本地部署还是调用 API？ → **内网 qwen2.5:72b，独立新会话调用**
+3. 向量索引使用 sqlite-vec（默认）还是 FAISS？ → **sqlite-vec**
+4. ✅ Cell 生成 LLM 使用哪个模型？ → **内网 qwen2.5:72b**
+5. 项目结构如何组织（src/ 还是扁平模块）？
 
 ## Decisions Made
 | Decision | Rationale |
@@ -67,6 +68,9 @@ Phase 1
 | 验证基于 LoCoMo 多 session 拼接 | 数据集公开、贴合长跨度单会话场景 |
 | 时间戳作为 Cell 元信息 | 支持跨长时间会话的时序检索与间隔分析 |
 | SQLite + sqlite-vec 作为默认存储后端 | 零运维、单文件、支持 Skill/MCP/LangChain 组件化，预留后端切换能力 |
+| Python 实现 | 团队熟悉、生态丰富、便于与 LangChain 集成 |
+| qwen2.5:72b 作为 LLM 后端 | 内网已有部署，语义边界检测与 Cell 生成统一模型，降低成本 |
+| 语义边界检测独立新会话 | 避免边界检测调用污染主会话上下文，保证 token 隔离 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

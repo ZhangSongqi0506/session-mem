@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "session-mem"
+version = "0.1.0"
+description = "Session-scoped Working Memory for LLMs"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "openai>=1.0",
+    "sqlite-vec>=0.1",
+    "numpy",
+    "tiktoken",
+]
+
+[project.optional-dependencies]
+langchain = ["langchain>=0.3"]
+dev = ["pytest", "black", "ruff"]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
