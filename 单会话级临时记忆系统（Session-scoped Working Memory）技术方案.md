@@ -307,52 +307,144 @@ def assemble_working_memory(query, hot_zone, faiss_index, cold_storage):
 
 *   **全文保真**：只要 Cell 被命中，用户第 2 轮说的"预算 1 万"原话，第 20 轮依然原封不动出现在 Prompt 中
     
-*   **防漏召回**：通过**时序链接**主动激活关联 Cell（见 5.2 节），避免"预算约束在第 2 轮 Cell，第 20 轮查询只命中折扣 Cell，导致遗忘预算"的问题
+*   **防漏召回**：通过**时序链接**主动激活关联 Cell（见 6.2 节），避免"预算约束在第 2 轮 Cell，第 20 轮查询只命中折扣 Cell，导致遗忘预算"的问题
     
 
 ---
 
-## 5. 边界情况与异常处理
+## 5. 存储与持久化设计
 
-### 5.1 超长会话（>50 轮）
+为支撑 Skill、MCP Tool 及 LangChain Memory 组件化目标，存储层采用**模块化可拔插**设计：底层定义统一抽象接口，默认以**零运维的 SQLite + sqlite-vec**实现，同时预留后端切换能力（如 FAISS、Chroma、PostgreSQL 等）。
 
-当会话轮次增长，Cell 数量超过 ShortMemBuffer 存储上限（2048 tokens 摘要）：
+### 5.1 存储抽象层
+
+系统对持久化需求拆分为三个正交接口，任何后端只需实现对应接口即可接入：
+
+| 接口 | 职责 | 当前默认实现 |
+|------|------|-------------|
+| `VectorIndex` | 语义向量检索（Top-K 相似度搜索） | `sqlite-vec` 虚拟表 |
+| `CellStore` | Cell 元信息、关系链、实体共现的增删查改 | SQLite 关系表 |
+| `TextStore` | 完整原文的按需加载 | SQLite TEXT 字段 |
+
+### 5.2 默认后端：SQLiteBackend
+
+默认使用单个 `.db` 文件承载全部数据，无需额外服务，开箱即用：
+
+**表 1：cells（Cell 结构化数据）**
+
+```sql
+CREATE TABLE cells (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    cell_type TEXT CHECK(cell_type IN ('fact', 'constraint', 'preference', 'task')),
+    confidence REAL,
+    summary TEXT,
+    keywords TEXT,          -- JSON array
+    entities TEXT,          -- JSON array
+    linked_prev TEXT,       -- 指向前一 Cell
+    timestamp_start TEXT,   -- ISO 8601
+    timestamp_end TEXT,     -- ISO 8601
+    vector_id TEXT,         -- 关联向量索引
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_cells_session ON cells(session_id);
+CREATE INDEX idx_cells_type ON cells(cell_type);
+CREATE INDEX idx_cells_linked_prev ON cells(linked_prev);
+```
+
+**表 2：cell_texts（原文回溯）**
+
+```sql
+CREATE TABLE cell_texts (
+    cell_id TEXT PRIMARY KEY,
+    raw_text TEXT,          -- 完整原文
+    token_count INTEGER,
+    FOREIGN KEY (cell_id) REFERENCES cells(id)
+);
+```
+
+**表 3：entity_links（实体共现关系）**
+
+```sql
+CREATE TABLE entity_links (
+    cell_id TEXT,
+    entity TEXT,
+    FOREIGN KEY (cell_id) REFERENCES cells(id)
+);
+CREATE INDEX idx_entity_links_entity ON entity_links(entity);
+```
+
+**表 4：cell_vectors（向量索引，sqlite-vec 扩展）**
+
+```sql
+CREATE VIRTUAL TABLE cell_vectors USING vec0(
+    cell_id TEXT PRIMARY KEY,
+    embedding FLOAT[512]  -- 维度根据嵌入模型动态配置
+);
+```
+
+### 5.3 内存与磁盘的分层关系
+
+ShortMemBuffer 中的**活跃窗口**和**存储窗口**是**内存缓存概念**，而非磁盘分级：
+
+*   **活跃 Cell（最近 10 个）**：同时保留在内存和 SQLite 中，向量索引常驻内存以加速检索。
+*   **存储 Cell（最近 40 个）**：保留在 SQLite 中，内存中仅保留摘要和关键词；检索时按需从 SQLite 加载向量或关键词做扩展搜索。
+*   **归档 Cell（更早）**：仍保留在 SQLite 的 `cells` 表中，但**向量索引可从内存释放**，仅通过关键词或显式时间范围请求触发加载。
+
+### 5.4 模型无关与扩展预留
+
+*   **维度可配置**：`cell_vectors` 的向量维度在初始化时根据所选 Encoder 动态确定，不绑定特定模型。
+*   **原文优先**：`raw_text` 字段永不被压缩或摘要化替换，确保不同 LLM 跨模型复用时看到的是同一套原始约束。
+*   **跨会话预留**：`cells` 表已包含 `session_id` 字段，当前按单会话过滤；未来扩展长期记忆时，可直接放宽该过滤条件实现跨会话检索，无需改表结构。
+
+---
+
+## 6. 边界情况与异常处理
+
+### 6.1 超长会话（>50 轮）
+
+当会话轮次增长，Cell 数量超过 ShortMemBuffer 存储上限（2048 tokens 摘要）：
 
 *   **分级存储**：
     
-    *   活跃 Cell（最近 10 个）：内存 + 向量索引
+    *   活跃 Cell（最近 10 个）：内存 + SQLite 向量索引
         
-    *   存储 Cell（最近 40 个）：内存摘要，无向量索引（仅关键词匹配）
+    *   存储 Cell（最近 40 个）：SQLite 全量存储，内存中仅保留摘要和关键词
         
-    *   归档 Cell（更早）：磁盘存储，仅保留极简摘要，需显式请求（如"三天前说的"）才加载
+    *   归档 Cell（更早）：SQLite 中保留极简摘要与原文，内存向量索引释放，需显式请求（如"三天前说的"）才加载
         
+
 *   **原文清理**：
     
-    *   高置信度 Cell 的原文在 24 小时后可清理
+    *   高置信度 Cell 的原文在 24 小时后可清理
         
-    *   低置信度 Cell 原文保留至会话结束
+    *   低置信度 Cell 原文保留至会话结束
         
-    *   提供配置项 `aggressive_cleanup`，开启后仅保留最近 10 个 Cell 的原文
+    *   提供配置项 `aggressive_cleanup`，开启后仅保留最近 10 个 Cell 的原文
         
 
-### 5.2 因果链断裂（长程依赖）
 
-当用户提问涉及跨多个 Cell 的因果关系（如"基于预算限制，刚才选的配置还能优化吗？"）：
+### 6.2 因果链断裂（长程依赖）
 
-*   **时序链接追踪**：通过 Cell 的 `linked_prev` 链，自动加载关联的约束类 Cell（即使其未被向量检索命中）
+当用户提问涉及跨多个 Cell 的因果关系（如"基于预算限制，刚才选的配置还能优化吗？"）：
+
+*   **时序链接追踪**：通过 Cell 的 `linked_prev` 链，自动加载关联的约束类 Cell（即使其未被向量检索命中）
     
-*   **实体共现激活**：若当前激活 Cell 含"预算"实体，自动检索其他含"预算"的 Cell，构建**约束上下文**
+*   **实体共现激活**：若当前激活 Cell 含"预算"实体，自动检索其他含"预算"的 Cell，构建**约束上下文**
     
-*   **显式标记**：在 Cell 生成时，LLM 识别并标记"此 Cell 包含对其他 Cell 的依赖"，检索时强制级联加载
+*   **显式标记**：在 Cell 生成时，LLM 识别并标记"此 Cell 包含对其他 Cell 的依赖"，检索时强制级联加载
     
 
-### 5.3 检索失败（冷启动/新话题）
+
+### 6.3 检索失败（冷启动/新话题）
 
 当检索无匹配（如用户突然问与历史无关的问题）：
 
-*   **零回溯模式**：工作记忆仅包含热区原文（最近 2 轮）+ 当前查询，不强行引入无关 Cell
+*   **零回溯模式**：工作记忆仅包含热区原文（最近 2 轮）+ 当前查询，不强行引入无关 Cell
     
-*   **新话题检测**：若连续 3 轮检索置信度 <0.5，触发"新话题"标记，清空 SenMemBuffer（旧话题原文强制生成 Cell 归档），避免旧话题碎片干扰新话题
+*   **新话题检测**：若连续 3 轮检索置信度 <0.5，触发"新话题"标记，清空 SenMemBuffer（旧话题原文强制生成 Cell 归档），避免旧话题碎片干扰新话题
+    
     
 
 ---

@@ -28,6 +28,7 @@
 | 双路召回（向量为主 + 关键词为辅） | 解决短查询与长摘要的语义空间不对齐 |
 | 命中即全量 | 避免压缩命中内容导致关键约束丢失 |
 | 时间戳统一 ISO 8601 UTC | 系统收到时间统一可控，避免客户端时钟偏差 |
+| SQLite + sqlite-vec 作为默认存储后端 | 零运维、单文件、适合组件化分发；schema 预留 session_id 支持未来跨会话扩展 |
 
 ## Issues Encountered
 | Issue | Resolution |

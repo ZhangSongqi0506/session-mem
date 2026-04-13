@@ -16,11 +16,15 @@
   - 确定代码仓库名为 `session-mem`
   - 初始化 Git 仓库并推送首个 commit
   - 使用 planning-with-files skill 创建开发规划文件
+  - 确定存储层设计：SQLite + sqlite-vec，模块化可拔插接口
+  - 技术方案中新增第 5 章「存储与持久化设计」
 - Files created/modified:
   - `单会话级临时记忆系统（Session-scoped Working Memory）技术方案.md`（修改）
   - `task_plan.md`（创建）
   - `findings.md`（创建）
   - `progress.md`（创建）
+  - `.vscode/sftp.json`（创建/修改）
+  - `AGENTS.md`（创建/修改）
 
 ### Phase 2: SenMemBuffer 实现
 - **Status:** pending

@@ -66,6 +66,7 @@ Phase 1
 | 代码仓库名为 `session-mem` | 简洁、语义明确、便于包管理 |
 | 验证基于 LoCoMo 多 session 拼接 | 数据集公开、贴合长跨度单会话场景 |
 | 时间戳作为 Cell 元信息 | 支持跨长时间会话的时序检索与间隔分析 |
+| SQLite + sqlite-vec 作为默认存储后端 | 零运维、单文件、支持 Skill/MCP/LangChain 组件化，预留后端切换能力 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
