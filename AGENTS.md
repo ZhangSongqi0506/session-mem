@@ -48,13 +48,38 @@ C:\zsq\单会话项目\session-mem-main/
 ├── pyproject.toml              # 项目配置与依赖
 ├── README.md                   # 项目说明
 ├── src/session_mem/            # 核心 Python 包
+│   ├── __init__.py
 │   ├── core/                   # MemorySystem、Buffer、Cell
+│   │   ├── __init__.py
+│   │   ├── buffer.py
+│   │   ├── cell.py
+│   │   ├── cell_generator.py
+│   │   ├── boundary_detector.py
+│   │   ├── memory_system.py
+│   │   └── working_memory.py
 │   ├── llm/                    # LLM 客户端、Prompt、解析器
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── qwen_client.py
+│   │   ├── prompts.py
+│   │   └── parser.py
 │   ├── storage/                # 存储抽象与 SQLiteBackend
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   └── sqlite_backend.py
 │   ├── retrieval/              # 查询重写、双路召回
+│   │   ├── __init__.py
+│   │   ├── query_rewriter.py
+│   │   └── hybrid_search.py
 │   ├── integrations/           # LangChain / MCP 适配（预留）
+│   │   ├── __init__.py
+│   │   └── langchain_memory.py
 │   └── utils/                  # TokenEstimator 等工具
+│       ├── __init__.py
+│       └── tokenizer.py
 └── tests/                      # 单元测试与集成测试
+    ├── __init__.py
+    └── conftest.py
 ```
 
 ---
