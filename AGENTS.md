@@ -30,10 +30,32 @@
 
 ### 2.2 技术栈
 
+| 层级 | 技术/工具 | 说明 |
+|------|----------|------|
+| 编程语言 | Python 3.11+ | 主开发语言 |
+| 包管理 | `hatchling` / `pip` | 构建后端使用 hatchling，开发期可用 pip install -e . |
+| 向量索引 | sqlite-vec | 零运维、单文件的 SQLite 向量扩展 |
+| 向量检索 | bge-large-en-v1.5（可选） | 通过 Xinference 本地部署，OpenAI 兼容接口 |
+| 核心 LLM | qwen2.5:72b-instruct-nq | 内网 OpenAI 兼容接口，用于语义边界检测和 Cell 生成 |
+| 评估 Judge | gpt-4o-mini | 实验评估时的答案评判 |
+| 主要依赖 | pydantic, openai, tiktoken, numpy | 数据校验、LLM 调用、Token 估算、数值计算 |
+| 可选集成 | langchain | LangChain Memory 组件化适配（预留） |
 
 ### 2.3 项目结构
 
-
+```
+C:\zsq\单会话项目\session-mem-main/
+├── pyproject.toml              # 项目配置与依赖
+├── README.md                   # 项目说明
+├── src/session_mem/            # 核心 Python 包
+│   ├── core/                   # MemorySystem、Buffer、Cell
+│   ├── llm/                    # LLM 客户端、Prompt、解析器
+│   ├── storage/                # 存储抽象与 SQLiteBackend
+│   ├── retrieval/              # 查询重写、双路召回
+│   ├── integrations/           # LangChain / MCP 适配（预留）
+│   └── utils/                  # TokenEstimator 等工具
+└── tests/                      # 单元测试与集成测试
+```
 
 ---
 
@@ -153,7 +175,13 @@ EMBEDDING_DIMS = 1024
 ### 5.1 使用规则
 
 **强制使用场景**:
-
+以下场景必须在使用 planning-with-files 技能创建规划文件后才开始执行：
+1. 多步骤实现任务（涉及 2 个以上模块修改）
+2. 新功能/新模块开发
+3. 复杂 bug 排查（预计超过 5 次工具调用）
+4. 实验设计与结果分析
+5. 技术方案审查与迭代
+6. 跨 Phase 的连续性工作
 
 **规划文件**: 项目根目录 `C:\zsq\单会话项目` 下创建三个文件
 - `task_plan.md` — 任务计划和阶段追踪
@@ -203,7 +231,8 @@ EMBEDDING_DIMS = 1024
 1. 第 2 节：项目信息（路径、技术栈、结构）
 2. 第 3 节：开发规范（命名、环境）
 3. 第 4 节：模型与数据配置
-4. 第 6 节：子代理使用规范
+4. 第 5 节：任务管理与 Phase 确认规则
+5. 第 6 节：子代理使用规范
 
 **关键信息**:
 - 本地编辑路径: C:\zsq\单会话项目\session-mem-main
@@ -217,7 +246,7 @@ EMBEDDING_DIMS = 1024
 ## ✅ 编码前检查清单
 
 在开始写代码前，请确认：
-- [ ] 已阅读 AGENTS.md 第 2、3、4、6 节
+- [ ] 已阅读 AGENTS.md 第 2、3、4、5、6 节
 - [ ] 了解本地编辑 vs 服务器运行的差异
 - [ ] 确认命名规范
 - [ ] 确认文件编码 UTF-8
@@ -343,9 +372,9 @@ git commit -m "refactor: 重构 benchmark runner 配置加载"
 
 ---
 
-## 9. 流程执行保障
+## 8. 流程执行保障
 
-### 9.1 子代理创建检查点
+### 8.1 子代理创建检查点
 
 **每次创建子代理前，必须自问：**
 
@@ -363,7 +392,7 @@ git commit -m "refactor: 重构 benchmark runner 配置加载"
    → 必须强调：子代理只编辑，不运行
 ```
 
-### 9.2 记忆重置后的恢复
+### 8.2 记忆重置后的恢复
 
 **如果发生 /clear 或记忆重置：**
 
@@ -373,7 +402,7 @@ git commit -m "refactor: 重构 benchmark runner 配置加载"
 4. **按照第 6 节流程创建子代理**
 5. **永不跳过确认步骤**
 
-### 9.3 快速参考卡片
+### 8.3 快速参考卡片
 
 **创建子代理的固定开场白：**
 
