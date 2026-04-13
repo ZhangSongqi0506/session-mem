@@ -13,11 +13,11 @@ Phase 1
 ## Phases
 
 ### Phase 1: 项目脚手架与核心接口设计
-- [ ] 初始化代码仓库结构（Python 包或 Node.js 模块）
-- [ ] 定义核心抽象接口：`MemorySystem`、`Buffer`、`MemoryCell`
-- [ ] 确定技术栈（向量库、嵌入模型、LLM 调用方式）
-- [ ] 设计对外 API（`add_turn()`, `retrieve_context()`）
-- **Status:** in_progress
+- [x] 初始化代码仓库结构（Python 包）
+- [x] 定义核心抽象接口：`MemorySystem`、`Buffer`、`MemoryCell`
+- [x] 确定技术栈（sqlite-vec、qwen2.5:72b、OpenAI 兼容接口）
+- [x] 设计对外 API（`add_turn()`, `retrieve_context()`）
+- **Status:** complete
 
 ### Phase 2: SenMemBuffer 实现
 - [ ] 实现原始对话的累积与 Token 估算
