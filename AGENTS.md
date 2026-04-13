@@ -23,6 +23,7 @@
 | 环境 | 路径 |
 |------|------|
 | **项目根目录（本地）** | `C:\zsq\单会话项目` |
+| **主要代码目录（本地）** | `C:\zsq\单会话项目\session-mem-main` |
 | **服务器运行路径** | `/home/zhangsongqi/session-mem` |
 
 
@@ -159,6 +160,10 @@ EMBEDDING_DIMS = 1024
 - `findings.md` — 技术选型和研究发现
 - `progress.md` — 会话日志和进度记录
 
+**代码文件**: 主要代码目录 `C:\zsq\单会话项目\session-mem-main` 下
+- `pyproject.toml`
+- `src/session_mem/...`
+
 ### 5.2 关键规则
 
 | 规则 | 说明 |
@@ -166,6 +171,7 @@ EMBEDDING_DIMS = 1024
 | 2-Action Rule | 每 2 次 view/browser/search 后立即保存发现到文件 |
 | Read Before Decide | 重大决策前重新读取 plan 文件 |
 | Update After Act | 每完成一个 phase，立即更新 task_plan.md 状态 |
+| **Phase 确认机制** | **每个 Phase 完成后必须显式获得用户确认，才能标记为 complete 并进入下一阶段** |
 | Log ALL Errors | 所有错误记录到 progress.md，防止重复犯错 |
 | 3-Strike Protocol | 同一错误 3 次未解决，升级给用户 |
 
@@ -200,12 +206,13 @@ EMBEDDING_DIMS = 1024
 4. 第 6 节：子代理使用规范
 
 **关键信息**:
-- 本地编辑路径: C:\zsq\单会话项目
+- 本地编辑路径: C:\zsq\单会话项目\session-mem-main
 - 服务器运行路径: /home/zhangsongqi/session-mem
 - 命名规范: 类名 PascalCase，函数/变量 snake_case
 - 文件编码: UTF-8
 - 包管理: conda / uv（后续确定）
 - 子代理只能编辑代码，不能运行代码
+- **Phase 确认规则：每个 Phase 完成后必须获得用户确认才能标记 complete**
 
 ## ✅ 编码前检查清单
 
@@ -220,11 +227,12 @@ EMBEDDING_DIMS = 1024
 
 请回复以下内容，确认你已了解规范：
 "已阅读 AGENTS.md，确认了解以下规范：
-1. 项目路径: C:\zsq\单会话项目 (本地) / /home/zhangsongqi/session-mem (服务器)
+1. 项目路径: C:\zsq\单会话项目\session-mem-main (本地) / /home/zhangsongqi/session-mem (服务器)
 2. 命名规范: PascalCase 类名，snake_case 函数
 3. 编码: UTF-8
 4. 包管理: conda / uv（后续确定）
-5. 子代理只编辑不运行"
+5. 子代理只编辑不运行
+6. Phase 确认规则：每个 Phase 完成后必须获得用户确认才能标记 complete"
 
 确认后，我会发送具体任务需求。
 ```
@@ -241,7 +249,7 @@ Task(
     prompt='''
 ## 项目背景
 - 项目: session-mem 单会话记忆系统
-- 本地路径: C:\\zsq\\单会话项目
+- 本地路径: C:\\zsq\\单会话项目\\session-mem-main
 - 服务器路径: /home/zhangsongqi/session-mem
 - 规范: 已确认阅读 AGENTS.md
 - 技术栈: Python 3.11（后续确定具体框架）
@@ -365,7 +373,7 @@ git commit -m "refactor: 重构 benchmark runner 配置加载"
 
 ```
 你必须先阅读 C:\zsq\单会话项目\AGENTS.md，
-特别是第 2 节（项目信息）、第 3 节（开发规范）和第 6 节（子代理规范）。
+特别是第 2 节（项目信息）、第 3 节（开发规范）、第 5 节（Phase 确认规则）和第 6 节（子代理规范）。
 
 请回复确认：
 "已阅读 AGENTS.md，确认了解命名规范、编码规范和执行环境差异"
