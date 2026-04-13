@@ -316,6 +316,8 @@ Task(
 
 ### 7.2 Git 提交规范
 
+**提交注释语言**：**必须使用中文**，清晰描述本次改动的目的和内容。
+
 **提交格式**（约定式提交）:
 ```bash
 git commit -m "feat: 新增 LongMemEval 类别过滤支持"
@@ -334,6 +336,10 @@ git commit -m "refactor: 重构 benchmark runner 配置加载"
 - `refactor`: 代码重构
 - `test`: 测试相关
 - `chore`: 构建过程或辅助工具的变动
+
+**强制规则**：
+- 所有 `git commit -m` 的注释内容必须使用中文
+- 禁止仅使用 "update"、"fix"、"ok" 等无意义英文单词作为提交信息
 
 ---
 
