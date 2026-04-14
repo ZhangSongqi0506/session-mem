@@ -5,6 +5,35 @@
 
 ## Session: 2026-04-14
 
+### Phase 4: Cell 生成、Meta Cell 与 ShortMemBuffer
+- **Status:** complete
+- **Actions taken:**
+  1. 实现 Embedding 客户端（QwenClient.embed），支持独立配置 Xinference bge-large-en-v1.5
+  2. 完善 CellGenerator：增加 LLM 异常捕获、JSON 解析 fallback（代码块/正则/去尾逗号）、简单摘要/关键词 fallback
+  3. 实现 MetaCellGenerator：初始生成 + 全量融合更新，配套 Prompt 与 Schema
+  4. ShortMemBuffer 重构为从 CellStore 按 session_id 加载
+  5. MemorySystem 完善闭环：生成 → 存元数据 → 存原文 → 存向量 → ShortMemBuffer；触发 Meta Cell 生成/更新
+  6. WorkingMemory 添加 meta_cell 字段，to_prompt 无条件前置 Meta Cell 全文
+  7. 新增 tests/test_cell_generator.py（4 个测试）、tests/test_meta_cell_generator.py（4 个测试）
+  8. 扩展 tests/test_buffer.py（ShortMemBuffer 2 个测试）、tests/test_memory_system.py（embedding + meta cell 3 个测试）
+  9. 全部 41 个测试通过；black + ruff 通过
+- **Files created/modified:**
+  - `src/session_mem/llm/base.py`（新增 embed 抽象）
+  - `src/session_mem/llm/qwen_client.py`（新增 embed 实现与 Embedding 配置）
+  - `src/session_mem/llm/prompts.py`（新增 Meta Cell Prompt/Schema）
+  - `src/session_mem/llm/parser.py`（增强 JSON fallback：正则提取、去尾逗号）
+  - `src/session_mem/core/cell_generator.py`（增强 fallback 与异常处理）
+  - `src/session_mem/core/meta_cell_generator.py`（完整实现）
+  - `src/session_mem/core/buffer.py`（ShortMemBuffer 联动 CellStore）
+  - `src/session_mem/core/memory_system.py`（embedding、meta cell 闭环）
+  - `src/session_mem/core/working_memory.py`（meta_cell 前置）
+  - `tests/test_cell_generator.py`（新建）
+  - `tests/test_meta_cell_generator.py`（新建）
+  - `tests/test_buffer.py`（扩展）
+  - `tests/test_memory_system.py`（扩展）
+
+---
+
 ### Phase 2: 存储层完善与数据库构建
 - **Status:** complete
 - **Actions taken:**

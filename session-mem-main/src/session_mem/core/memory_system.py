@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
 
 from session_mem.core.buffer import SenMemBuffer, ShortMemBuffer, Turn
 from session_mem.core.cell import MemoryCell
 from session_mem.core.cell_generator import CellGenerator
 from session_mem.core.boundary_detector import SemanticBoundaryDetector
+from session_mem.core.meta_cell_generator import MetaCellGenerator
 from session_mem.core.working_memory import WorkingMemory
 from session_mem.llm.base import LLMClient
 from session_mem.retrieval.hybrid_search import HybridSearcher
@@ -26,6 +28,8 @@ class MemorySystem:
         cell_store: CellStore,
         text_store: TextStore,
         hybrid_searcher: HybridSearcher | None = None,
+        meta_cell_store: Any = None,
+        embedding_client: LLMClient | None = None,
     ):
         self.session_id = session_id
         self.llm = llm_client
@@ -33,12 +37,15 @@ class MemorySystem:
         self.cell_store = cell_store
         self.text_store = text_store
         self.hybrid = hybrid_searcher
+        self.meta_cell_store = meta_cell_store
+        self.embedding_client = embedding_client
 
         self.sen_buffer = SenMemBuffer(session_id=session_id)
         self.sen_buffer.set_token_estimator(TokenEstimator().estimate)
-        self.short_buffer = ShortMemBuffer()
+        self.short_buffer = ShortMemBuffer(session_id=session_id, cell_store=cell_store)
         self.cell_generator = CellGenerator(self.llm)
         self.boundary_detector = SemanticBoundaryDetector(self.llm)
+        self.meta_cell_generator = MetaCellGenerator(self.llm)
         self._cell_counter = 0
         self._last_cell_id: str | None = None
 
@@ -74,6 +81,7 @@ class MemorySystem:
     ) -> WorkingMemory:
         """
         检索相关 Cell 并组装 Working Memory。
+        Meta Cell 无条件前置。
         """
         # 1. 构建热区
         hot_zone = self._build_hot_zone(hot_zone_turns)
@@ -91,13 +99,38 @@ class MemorySystem:
                 cell.raw_text = self.text_store.load(cid)
                 activated.append(cell)
 
-        # 4. 组装
+        # 4. 获取 active Meta Cell
+        meta_cell: MemoryCell | None = None
+        if self.meta_cell_store is not None:
+            meta_cell = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
+                self.session_id
+            )
+
+        # 5. 组装
         wm = WorkingMemory(
             hot_zone=hot_zone,
             activated_cells=activated,
             query=query,
+            meta_cell=meta_cell,
         )
         return wm
+
+    def _update_meta_cell(self) -> None:
+        """触发 Meta Cell 的生成或全量融合更新。"""
+        if self.meta_cell_store is None:
+            return
+        all_cells = self.short_buffer.all_cells()
+        if not all_cells:
+            return
+        previous_meta = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
+            self.session_id
+        )
+        meta_cell = self.meta_cell_generator.generate(
+            self.session_id,
+            all_cells,
+            previous_meta=previous_meta,
+        )
+        getattr(self.meta_cell_store, "save_meta_cell", lambda c: None)(meta_cell)
 
     def _build_hot_zone(self, n_turns: int) -> list[str]:
         recent = self.sen_buffer.turns[-n_turns:]
@@ -122,6 +155,19 @@ class MemorySystem:
             cell.cell_type = "fragmented"
         self.cell_store.save(cell)
         self.text_store.save(cell.id, cell.raw_text, cell.token_count)
-        # Embedding 向量写入在 Phase 4 实现
+
+        # Embedding 向量写入
+        if self.embedding_client is not None:
+            try:
+                embeddings = self.embedding_client.embed([cell.raw_text])
+                if embeddings:
+                    self.vector_index.add(cell.vector_id or cell.id, embeddings[0])
+            except Exception:
+                pass  # 降级：embedding 失败不阻塞主流程
+
         self.short_buffer.add(cell)
         self._last_cell_id = cell.id
+
+        # Meta Cell 生成 / 更新
+        if self.meta_cell_store is not None:
+            self._update_meta_cell()

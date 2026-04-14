@@ -36,3 +36,7 @@ class LLMClient(ABC):
             response_format=response_format,
             **kwargs,
         )
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """获取文本嵌入向量。默认实现抛出 NotImplementedError。"""
+        raise NotImplementedError("当前 LLMClient 未实现 embed 方法")

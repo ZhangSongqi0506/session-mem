@@ -1,5 +1,7 @@
 """LLM Prompt 模板：语义边界检测 + Cell 生成。"""
 
+from typing import Any
+
 # ============================================================
 # 语义边界检测（独立新会话调用）
 # ============================================================
@@ -86,3 +88,85 @@ def build_cell_generation_prompt(raw_text: str) -> list[dict[str, str]]:
         {"role": "user", "content": f"对话内容：\n{raw_text}\n\n请生成 Memory Cell JSON："},
     ]
     return messages
+
+
+# ============================================================
+# Meta Cell 生成 / 更新
+# ============================================================
+META_CELL_GENERATION_SYSTEM = """\
+你是一个会话主旨摘要专家。请根据已生成的 Memory Cell 列表，提炼出一段会话级全局摘要（Meta Cell）。
+
+要求：
+1. summary: 80-120 tokens，概括会话的核心目标、当前进度和关键约束
+2. keywords: 5-8 个关键词（list）
+3. entities: 3-5 个关键实体（list）
+4. confidence: 0-1 之间的 float
+5. causal_deps: 若有明确的跨 Cell 依赖，列出其 Cell ID（list，没有则空）
+
+必须输出合法 JSON，不要 markdown 代码块包围，不要额外说明。
+"""
+
+META_CELL_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "meta_cell",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "entities": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "confidence": {"type": "number"},
+                "causal_deps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": [
+                "summary",
+                "keywords",
+                "entities",
+                "confidence",
+                "causal_deps",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def build_meta_cell_prompt(
+    cells: list[dict[str, Any]],
+    previous_meta: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """构建 Meta Cell 生成的 prompt。
+
+    Args:
+        cells: 当前会话全部普通 Cell 的字典列表（按时间序）。
+        previous_meta: 上一个版本的 Meta Cell 字典，若为 None 则生成初始版本。
+    """
+    cells_text = "\n\n".join(
+        f"Cell {i + 1} (ID: {c['id']}):\nSummary: {c.get('summary', '')}\n"
+        f"Keywords: {c.get('keywords', [])}\nEntities: {c.get('entities', [])}\n"
+        f"Type: {c.get('cell_type', 'fact')}\nRaw: {c.get('raw_text', '')[:200]}"
+        for i, c in enumerate(cells)
+    )
+    if previous_meta:
+        user_content = (
+            f"已有 Meta Cell:\n{previous_meta.get('summary', '')}\n\n"
+            f"当前全部普通 Cell:\n{cells_text}\n\n"
+            "请全量融合重写 Meta Cell JSON："
+        )
+    else:
+        user_content = f"当前全部普通 Cell:\n{cells_text}\n\n请生成初始 Meta Cell JSON："
+    return [
+        {"role": "system", "content": META_CELL_GENERATION_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]

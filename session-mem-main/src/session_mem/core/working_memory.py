@@ -12,10 +12,16 @@ class WorkingMemory:
     hot_zone: list[str] = field(default_factory=list)
     activated_cells: list[MemoryCell] = field(default_factory=list)
     query: str = ""
+    meta_cell: MemoryCell | None = None
 
     def to_prompt(self) -> list[dict[str, str]]:
-        """按标准 OpenAI 消息格式返回上下文。"""
+        """按标准 OpenAI 消息格式返回上下文。
+
+        组装顺序：Meta Cell 全文（无条件前置）→ 热区 → 命中 Cell 全文 → 查询。
+        """
         parts: list[str] = []
+        if self.meta_cell and self.meta_cell.raw_text:
+            parts.append(self.meta_cell.raw_text)
         if self.hot_zone:
             parts.extend(self.hot_zone)
         for cell in self.activated_cells:

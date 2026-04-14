@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Callable
 
 from session_mem.core.cell import MemoryCell
+from session_mem.storage.base import CellStore
 
 
 @dataclass
@@ -90,19 +91,22 @@ class ShortMemBuffer:
     """
     短期缓冲（ShortMemBuffer）：Cell 摘要的统一检索池。
     MVP 阶段不区分活跃/存储窗口，所有 Cell 均参与检索。
+    与存储层联动，all_cells() 从 CellStore 按 session_id 读取。
     """
 
-    def __init__(self) -> None:
-        self.cells: list[MemoryCell] = []
+    def __init__(self, session_id: str, cell_store: CellStore) -> None:
+        self.session_id = session_id
+        self.cell_store = cell_store
+        self._cache: list[MemoryCell] = []
 
     def add(self, cell: MemoryCell) -> None:
-        self.cells.append(cell)
+        self._cache.append(cell)
 
     def all_cells(self) -> list[MemoryCell]:
-        return self.cells
+        return self.cell_store.list_by_session(self.session_id)
 
     def get(self, cell_id: str) -> MemoryCell | None:
-        for c in self.cells:
+        for c in self._cache:
             if c.id == cell_id:
                 return c
-        return None
+        return self.cell_store.get(cell_id)

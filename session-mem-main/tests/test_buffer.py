@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from session_mem.core.buffer import SenMemBuffer, Turn
+from session_mem.core.buffer import SenMemBuffer, ShortMemBuffer, Turn
+from session_mem.core.cell import MemoryCell
+from session_mem.storage.base import CellStore
 
 
 @pytest.fixture
@@ -10,6 +12,31 @@ def buffer() -> SenMemBuffer:
     b = SenMemBuffer(session_id="s1")
     b.set_token_estimator(lambda text: len(text) // 4)
     return b
+
+
+class DummyCellStore(CellStore):
+    def __init__(self):
+        self._cells: dict[str, MemoryCell] = {}
+
+    def save(self, cell: MemoryCell) -> None:
+        self._cells[cell.id] = cell
+
+    def get(self, cell_id: str) -> MemoryCell | None:
+        return self._cells.get(cell_id)
+
+    def list_by_session(self, session_id: str, limit: int | None = None):
+        result = [c for c in self._cells.values() if c.session_id == session_id]
+        if limit is not None:
+            result = result[:limit]
+        return result
+
+    def find_by_entity(self, session_id: str, entity: str):
+        return []
+
+    def delete_session(self, session_id: str) -> None:
+        to_remove = [cid for cid, c in self._cells.items() if c.session_id == session_id]
+        for cid in to_remove:
+            self._cells.pop(cid, None)
 
 
 def test_estimated_tokens_with_estimator(buffer: SenMemBuffer) -> None:
@@ -108,3 +135,44 @@ def test_extract_for_cell_resets_check_count(buffer: SenMemBuffer) -> None:
     # 重置后，添加一轮不应触发
     buffer.add_turn(Turn("user", "x" * 400, "2026-04-14T10:00:01Z"))
     assert not buffer.should_trigger_check()
+
+
+# ============================================================
+# ShortMemBuffer 测试
+# ============================================================
+
+
+def test_short_mem_buffer_all_cells_from_store() -> None:
+    store = DummyCellStore()
+    sb = ShortMemBuffer(session_id="s1", cell_store=store)
+
+    cell = MemoryCell(
+        id="C_001",
+        session_id="s1",
+        cell_type="fact",
+        confidence=0.9,
+        summary="test",
+    )
+    store.save(cell)
+
+    cells = sb.all_cells()
+    assert len(cells) == 1
+    assert cells[0].id == "C_001"
+
+
+def test_short_mem_buffer_add_and_get() -> None:
+    store = DummyCellStore()
+    sb = ShortMemBuffer(session_id="s1", cell_store=store)
+
+    cell = MemoryCell(
+        id="C_002",
+        session_id="s1",
+        cell_type="fact",
+        confidence=0.8,
+        summary="test2",
+    )
+    sb.add(cell)
+
+    assert sb.get("C_002") is not None
+    assert sb.get("C_002").id == "C_002"
+    assert sb.get("C_999") is None

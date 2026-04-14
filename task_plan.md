@@ -8,7 +8,7 @@
 实现 `session-mem` 单会话级临时记忆系统的 MVP，包含三层缓冲架构、Cell 生成与检索、时间戳解析、SQLite + sqlite-vec 存储，并通过 LoCoMo 拼接会话完成基准验证。
 
 ## Current Phase
-Phase 2
+Phase 4
 
 ## Phases
 
@@ -86,12 +86,12 @@ Phase 2
 - **Status:** complete
 
 ### Phase 4: Cell 生成、Meta Cell 与 ShortMemBuffer
-- [ ] 完善 `CellGenerator`：集成 LLM Prompt 调用、JSON 解析 fallback、四层信息填充
-- [ ] 集成 Embedding 服务：通过 Xinference/OpenAI 兼容接口获取 1024 维向量，写入 `SQLiteVectorIndex`
-- [ ] `ShortMemBuffer` 与存储层联动：从 `CellStore` 加载当前会话全部 Cell，而非仅内存列表
-- [ ] 实现 `MemorySystem` 中 Cell 生成的完整闭环（生成 → 存元数据 → 存原文 → 存向量 → 加入 ShortMemBuffer）
-- [ ] 实现 `MetaCellGenerator`：首个普通 Cell 生成后创建初始 Meta Cell；后续每生成一个普通 Cell，调用 LLM 全量融合重写 Meta Cell
-- [ ] `SQLiteBackend` 新增 `save_meta_cell()` / `get_active_meta_cell()` / `delete_meta_cells_by_session()`
+- [x] 完善 `CellGenerator`：集成 LLM Prompt 调用、JSON 解析 fallback、四层信息填充
+- [x] 集成 Embedding 服务：通过 Xinference/OpenAI 兼容接口获取 1024 维向量，写入 `SQLiteVectorIndex`
+- [x] `ShortMemBuffer` 与存储层联动：从 `CellStore` 加载当前会话全部 Cell，而非仅内存列表
+- [x] 实现 `MemorySystem` 中 Cell 生成的完整闭环（生成 → 存元数据 → 存原文 → 存向量 → 加入 ShortMemBuffer）
+- [x] 实现 `MetaCellGenerator`：首个普通 Cell 生成后创建初始 Meta Cell；后续每生成一个普通 Cell，调用 LLM 全量融合重写 Meta Cell
+- [x] `SQLiteBackend` 新增 `save_meta_cell()` / `get_active_meta_cell()` / `delete_meta_cells_by_session()`
 - **涉及代码**:
   - `src/session_mem/core/cell_generator.py`（完善 `generate`，处理 LLM 失败 fallback）
   - `src/session_mem/core/meta_cell_generator.py`（新建：初始生成 + 全量融合更新）
