@@ -96,6 +96,7 @@ C:\zsq\单会话项目\session-mem-main/
 5. **规划先行**: 复杂任务必须使用 planning-with-files 技能
 6. **子代理分工**: 复杂任务拆分子代理并行执行
 7. **删除确认**: 删除文件或大量代码前必须告知用户并获得确认
+8. **Schema 同步**: 修改 `MemoryCell` 结构或数据库表结构时，必须同步更新 `sqlite_backend.py`、单元测试和相关文档
 
 **禁止事项**:
 - 不要将模型权重（>100MB）提交到 git
@@ -105,14 +106,52 @@ C:\zsq\单会话项目\session-mem-main/
 
 ### 3.2 命名规范
 
-
+| 类型 | 规范 | 示例 |
+|------|------|------|
+| 类名 | PascalCase | `MemorySystem`, `SenMemBuffer`, `SQLiteBackend` |
+| 函数/方法 | snake_case | `add_turn()`, `should_split()`, `retrieve_context()` |
+| 变量/参数 | snake_case | `hot_zone`, `cell_id`, `vector_weight` |
+| 常量 | UPPER_SNAKE_CASE | `EMBEDDING_DIMS = 1024` |
+| 模块/文件名 | snake_case | `sqlite_backend.py`, `hybrid_search.py` |
+| 私有方法 | 单下划线前缀 | `_next_cell_id()`, `_ensure_tables()` |
+| 抽象基类 | 前缀/后缀明确 | `LLMClient` (ABC), `VectorIndex` (ABC) |
+| 类型别名 | 大驼峰或显式类型注解 | `list[MemoryCell]`, `dict[str, Any]` |
 
 ### 3.3 代码风格
 
+- **类型注解**：所有公共函数/方法必须带类型注解，返回值类型不可省略
+- **导入顺序**：标准库 → 第三方库 → 本地模块，每组之间空一行
+- **字符串引号**：优先使用双引号 `""`，Docstring 使用三重双引号
+- **异常处理**：捕获具体异常类型，禁止裸 `except:`；异常需记录到 `progress.md`
+- **数据库操作**：所有 SQL 语句使用参数化查询，严禁字符串拼接 SQL
+- **JSON 处理**：使用 `json.dumps(..., ensure_ascii=False)` 保证中文正常存储
+- **文件编码**：所有 Python 文件必须使用 UTF-8 编码（含中文注释/字符串）
+- **行长度**：Black / Ruff 配置为 100 字符（见 `pyproject.toml`）
 
 ### 3.4 环境配置（uv）
 
+**创建虚拟环境并安装依赖**：
+```bash
+cd C:\zsq\单会话项目\session-mem-main
+uv venv --python 3.11
+uv pip install -e ".[dev]"
+```
 
+**运行测试**：
+```bash
+uv run pytest tests/
+```
+
+**代码格式化**：
+```bash
+uv run black src/ tests/
+uv run ruff check src/ tests/
+```
+
+**关键依赖说明**：
+- `sqlite-vec>=0.1`：向量索引扩展，需在 SQLite 连接中启用
+- `openai>=1.0`：用于调用内网 qwen2.5:72b 及 Xinference Embedding 服务
+- `tiktoken`：Token 估算（若模型无对应 tokenizer，可用字符数 fallback）
 
 ---
 

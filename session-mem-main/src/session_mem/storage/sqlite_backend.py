@@ -12,7 +12,7 @@ from session_mem.storage.base import CellStore, TextStore, VectorIndex
 class SQLiteVectorIndex(VectorIndex):
     """基于 sqlite-vec 的向量索引实现。"""
 
-    def __init__(self, conn: sqlite3.Connection, dims: int = 512):
+    def __init__(self, conn: sqlite3.Connection, dims: int = 1024):
         self.conn = conn
         self.dims = dims
         self._ensure_table()
@@ -233,7 +233,7 @@ class SQLiteBackend:
     统一 SQLite 后端，一个 db 文件包含 VectorIndex + CellStore + TextStore。
     """
 
-    def __init__(self, db_path: str | Path, vector_dims: int = 512):
+    def __init__(self, db_path: str | Path, vector_dims: int = 1024):
         self.db_path = Path(db_path)
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
