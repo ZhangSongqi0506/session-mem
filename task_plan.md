@@ -66,11 +66,11 @@ Phase 2
 - **Status:** complete
 
 ### Phase 3: SenMemBuffer 实现与语义边界检测
-- [ ] 完善 `SenMemBuffer`：Token 估算（使用 tiktoken 或字符 fallback）、512 整数倍检测阈值、2048 硬上限切分
-- [ ] 时间戳注入与间隔检测：ISO 8601 UTC 解析，30 分钟阈值触发强制切分
-- [ ] 语义边界检测集成：`SemanticBoundaryDetector` 主路径（qwen2.5:72b 独立新会话）+ 规则 fallback
-- [ ] 强制切分与滑动保留逻辑：切分后保留的轮次作为新 Cell 种子
-- [ ] 将 `SenMemBuffer` 切分流程接入 `MemorySystem.add_turn()`
+- [x] 完善 `SenMemBuffer`：Token 估算（使用 tiktoken 或字符 fallback）、512 整数倍检测阈值、2048 硬上限切分
+- [x] 时间戳注入与间隔检测：ISO 8601 UTC 解析，30 分钟阈值触发强制切分
+- [x] 语义边界检测集成：`SemanticBoundaryDetector` 主路径（qwen2.5:72b 独立新会话）+ 规则 fallback（超长内容直接切分、LLM 异常时返回 False）
+- [x] 强制切分与滑动保留逻辑：切分后保留的轮次作为新 Cell 种子
+- [x] 将 `SenMemBuffer` 切分流程接入 `MemorySystem.add_turn()`（gap → hard limit → soft limit → boundary detection）
 - **涉及代码**:
   - `src/session_mem/core/buffer.py`（`SenMemBuffer`：token 估算、gap_detected、extract_for_cell）
   - `src/session_mem/core/boundary_detector.py`（`should_split` 集成 fallback）
@@ -83,6 +83,7 @@ Phase 2
   3. `SemanticBoundaryDetector` 对明显话题转折返回 `True`，对连续对话返回 `False`
   4. `MemorySystem.add_turn()` 在检测到边界时，能正确调用 `CellGenerator` 生成 Cell 并清空已切分轮次
   5. 达到 2048 tokens 仍未切分时，强制提取全部内容生成 Cell 并标记 `fragmented`
+- **Status:** complete
 
 ### Phase 4: Cell 生成、Meta Cell 与 ShortMemBuffer
 - [ ] 完善 `CellGenerator`：集成 LLM Prompt 调用、JSON 解析 fallback、四层信息填充

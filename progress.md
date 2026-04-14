@@ -23,6 +23,24 @@
   - `src/session_mem/core/memory_system.py`（ruff 自动修复未使用导入）
   - `src/session_mem/storage/base.py`（ruff 自动修复未使用导入）
 
+### Phase 3: SenMemBuffer 实现与语义边界检测
+- **Status:** complete
+- **Actions taken:**
+  - 完善 `SenMemBuffer`：修正 `should_trigger_check` 为 512 整数倍首次跨越触发（引入 `_check_count`），`extract_for_cell` 后自动重置计数器
+  - 实现 `gap_detected()`：使用 `datetime.fromisoformat` 解析 ISO 8601（含 `Z` 和时区偏移），30 分钟阈值检测
+  - 完善 `SemanticBoundaryDetector`：新增超长内容（>8000 字符）直接切分的规则 fallback，LLM 调用异常时安全返回 False
+  - 将切分流程接入 `MemorySystem.add_turn()`：按 gap → hard limit → soft limit → boundary detection 顺序触发；硬上限强制切分并标记 `fragmented`；语义切分保留最后一轮作为种子
+  - 在 `MemorySystem` 中自动注入 `TokenEstimator`，实例化 `CellGenerator` 与 `SemanticBoundaryDetector`，实现 `_generate_cell()` 辅助方法
+  - 新建 `tests/test_buffer.py`（9 个测试）、`tests/test_boundary_detector.py`（5 个测试）、`tests/test_memory_system.py`（5 个测试）
+  - 运行 `uv run pytest tests/ -v`，28 个测试全部通过
+- **Files created/modified:**
+  - `src/session_mem/core/buffer.py`（`should_trigger_check`、`gap_detected`、`extract_for_cell` 重置）
+  - `src/session_mem/core/boundary_detector.py`（fallback 规则、异常处理）
+  - `src/session_mem/core/memory_system.py`（切分逻辑、`_generate_cell`、TokenEstimator 注入）
+  - `tests/test_buffer.py`（新建）
+  - `tests/test_boundary_detector.py`（新建）
+  - `tests/test_memory_system.py`（新建）
+
 ### 文档与规划更新 + 代码热修复
 - **Status:** complete
 - **Actions taken:**
