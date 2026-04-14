@@ -23,30 +23,28 @@ class MockLLM(LLMClient):
 
 def test_initial_meta_cell() -> None:
     llm = MockLLM(
-        '{"summary": "用户在询问天气和交通", "keywords": ["天气", "交通"], '
+        '{"summary": "用户在询问天气", "keywords": ["天气"], '
         '"entities": ["北京"], "confidence": 0.8, "causal_deps": []}'
     )
     gen = MetaCellGenerator(llm)
-    cells = [
-        MemoryCell(
-            id="C_001",
-            session_id="s1",
-            cell_type="fact",
-            confidence=0.9,
-            summary="用户询问北京天气",
-            keywords=["天气", "北京"],
-            entities=["北京"],
-            raw_text="今天北京天气怎么样？",
-        )
-    ]
-    meta = gen.generate("s1", cells)
+    cell = MemoryCell(
+        id="C_001",
+        session_id="s1",
+        cell_type="fact",
+        confidence=0.9,
+        summary="用户询问北京天气",
+        keywords=["天气", "北京"],
+        entities=["北京"],
+        raw_text="今天北京天气怎么样？",
+    )
+    meta = gen.generate("s1", cell)
 
     assert meta.cell_type == "meta"
     assert meta.id == "M_001"
     assert meta.version == 1
     assert meta.status == "active"
     assert meta.linked_cells == ["C_001"]
-    assert meta.summary == "用户在询问天气和交通"
+    assert meta.summary == "用户在询问天气"
 
 
 def test_update_meta_cell() -> None:
@@ -55,28 +53,16 @@ def test_update_meta_cell() -> None:
         '"entities": ["北京"], "confidence": 0.85, "causal_deps": []}'
     )
     gen = MetaCellGenerator(llm)
-    cells = [
-        MemoryCell(
-            id="C_001",
-            session_id="s1",
-            cell_type="fact",
-            confidence=0.9,
-            summary="用户询问北京天气",
-            keywords=["天气", "北京"],
-            entities=["北京"],
-            raw_text="今天北京天气怎么样？",
-        ),
-        MemoryCell(
-            id="C_002",
-            session_id="s1",
-            cell_type="task",
-            confidence=0.9,
-            summary="用户查询北京交通",
-            keywords=["交通", "北京"],
-            entities=["北京"],
-            raw_text="北京地铁怎么坐？",
-        ),
-    ]
+    new_cell = MemoryCell(
+        id="C_002",
+        session_id="s1",
+        cell_type="task",
+        confidence=0.9,
+        summary="用户查询北京交通",
+        keywords=["交通", "北京"],
+        entities=["北京"],
+        raw_text="北京地铁怎么坐？",
+    )
     previous_meta = MemoryCell(
         id="M_001",
         session_id="s1",
@@ -90,7 +76,7 @@ def test_update_meta_cell() -> None:
         linked_cells=["C_001"],
         raw_text="用户询问北京天气",
     )
-    meta = gen.generate("s1", cells, previous_meta=previous_meta)
+    meta = gen.generate("s1", new_cell, previous_meta=previous_meta, linked_cells=["C_001"])
 
     assert meta.id == "M_002"
     assert meta.version == 2
@@ -102,29 +88,17 @@ def test_update_meta_cell() -> None:
 def test_meta_cell_fallback_on_llm_failure() -> None:
     llm = MockLLM("")
     gen = MetaCellGenerator(llm)
-    cells = [
-        MemoryCell(
-            id="C_001",
-            session_id="s1",
-            cell_type="fact",
-            confidence=0.9,
-            summary="摘要 A",
-            keywords=["kw1", "kw2"],
-            entities=["ent1"],
-            raw_text="...",
-        ),
-        MemoryCell(
-            id="C_002",
-            session_id="s1",
-            cell_type="fact",
-            confidence=0.8,
-            summary="摘要 B",
-            keywords=["kw2", "kw3"],
-            entities=["ent2"],
-            raw_text="...",
-        ),
-    ]
-    meta = gen.generate("s1", cells)
+    cell = MemoryCell(
+        id="C_001",
+        session_id="s1",
+        cell_type="fact",
+        confidence=0.9,
+        summary="摘要 A",
+        keywords=["kw1", "kw2"],
+        entities=["ent1"],
+        raw_text="...",
+    )
+    meta = gen.generate("s1", cell)
 
     assert meta.cell_type == "meta"
     assert meta.summary != ""
@@ -133,8 +107,8 @@ def test_meta_cell_fallback_on_llm_failure() -> None:
     assert meta.confidence <= 0.3
 
 
-def test_meta_cell_empty_cells_raises() -> None:
+def test_meta_cell_empty_cell_raises() -> None:
     llm = MockLLM("{}")
     gen = MetaCellGenerator(llm)
     with pytest.raises(ValueError):
-        gen.generate("s1", [])
+        gen.generate("s1", None)  # type: ignore[arg-type]

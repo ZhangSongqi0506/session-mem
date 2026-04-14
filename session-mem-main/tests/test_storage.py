@@ -219,3 +219,21 @@ def test_cell_type_fragmented(backend: SQLiteBackend) -> None:
     retrieved = backend.cell_store.get("c_frag")
     assert retrieved is not None
     assert retrieved.cell_type == "fragmented"
+
+
+def test_causal_deps_and_metadata_persistence(backend: SQLiteBackend) -> None:
+    cell = MemoryCell(
+        id="c1",
+        session_id="s1",
+        cell_type="constraint",
+        confidence=0.9,
+        summary="budget limit",
+        causal_deps=["C_001"],
+        metadata={"source": "user_explicit", "priority": "high"},
+    )
+    backend.cell_store.save(cell)
+
+    retrieved = backend.cell_store.get("c1")
+    assert retrieved is not None
+    assert retrieved.causal_deps == ["C_001"]
+    assert retrieved.metadata == {"source": "user_explicit", "priority": "high"}

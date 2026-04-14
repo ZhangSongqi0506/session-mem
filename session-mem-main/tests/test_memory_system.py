@@ -246,6 +246,31 @@ def test_generate_cell_triggers_meta_cell() -> None:
     assert meta.linked_cells == ["C_001", "C_002"]
 
 
+def test_cell_id_persists_after_restart() -> None:
+    """模拟进程重启后恢复同一会话，Cell ID 应从已有数据中继承最大序号。"""
+    store = DummyCellStore()
+    store.save(
+        MemoryCell(
+            id="C_003",
+            session_id="s1",
+            cell_type="fact",
+            confidence=0.9,
+            summary="existing",
+        )
+    )
+    ms = MemorySystem(
+        session_id="s1",
+        llm_client=MockLLM("CONTINUE"),
+        vector_index=DummyVectorIndex(),
+        cell_store=store,
+        text_store=DummyTextStore(),
+    )
+    # 直接调用内部方法验证计数器已继承
+    assert ms._cell_counter == 3
+    next_id = ms._next_cell_id()
+    assert next_id == "C_004"
+
+
 def test_retrieve_context_includes_meta_cell() -> None:
     meta_store = DummyMetaCellStore()
     ms = MemorySystem(

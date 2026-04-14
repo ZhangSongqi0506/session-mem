@@ -73,6 +73,8 @@ class SQLiteCellStore(CellStore):
                 timestamp_start TEXT,
                 timestamp_end TEXT,
                 vector_id TEXT,
+                causal_deps TEXT,
+                metadata TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
             """)
@@ -96,8 +98,9 @@ class SQLiteCellStore(CellStore):
             """
             INSERT OR REPLACE INTO cells (
                 id, session_id, cell_type, confidence, summary,
-                keywords, entities, linked_prev, timestamp_start, timestamp_end, vector_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                keywords, entities, linked_prev, timestamp_start, timestamp_end, vector_id,
+                causal_deps, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cell.id,
@@ -111,6 +114,8 @@ class SQLiteCellStore(CellStore):
                 cell.timestamp_start,
                 cell.timestamp_end,
                 cell.vector_id,
+                json.dumps(cell.causal_deps, ensure_ascii=False),
+                json.dumps(cell.metadata, ensure_ascii=False),
             ),
         )
         # 更新实体共现表
@@ -176,6 +181,8 @@ class SQLiteCellStore(CellStore):
             timestamp_start=row["timestamp_start"],
             timestamp_end=row["timestamp_end"],
             vector_id=row["vector_id"],
+            causal_deps=json.loads(row["causal_deps"] or "[]"),
+            metadata=json.loads(row["metadata"] or "{}"),
         )
 
 

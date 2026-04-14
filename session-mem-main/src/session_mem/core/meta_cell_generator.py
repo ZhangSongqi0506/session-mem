@@ -11,7 +11,8 @@ class MetaCellGenerator:
     """Meta Cell 生成器：维护会话级全局摘要单元。
 
     首个普通 Cell 生成后，基于该 Cell 创建初始 Meta Cell；
-    后续每生成一个普通 Cell，调用 LLM 全量融合重写 Meta Cell。
+    后续每生成一个普通 Cell，将"当前 Meta Cell 全文 + 新 Cell 原文"
+    送入 LLM 进行增量融合重写。
     """
 
     def __init__(self, llm_client: LLMClient):
@@ -21,25 +22,26 @@ class MetaCellGenerator:
     def generate(
         self,
         session_id: str,
-        cells: list[MemoryCell],
+        cell: MemoryCell,
         previous_meta: MemoryCell | None = None,
+        linked_cells: list[str] | None = None,
     ) -> MemoryCell:
-        """生成或更新会话级 Meta Cell。
+        """生成或增量更新会话级 Meta Cell。
 
         Args:
             session_id: 当前会话 ID。
-            cells: 当前会话已生成的全部普通 Cell 列表（按时间序）。
+            cell: 用于生成/更新 Meta Cell 的普通 Cell（初始为首个 Cell，更新为最新 Cell）。
             previous_meta: 上一个版本的 Meta Cell，若为 None 则生成初始版本。
+            linked_cells: 当前已关联的普通 Cell ID 列表。
 
         Returns:
             填充完整的 MemoryCell（cell_type='meta'）。
         """
-        if not cells:
-            raise ValueError("cells 列表不能为空")
+        if not cell:
+            raise ValueError("cell 不能为空")
 
-        cell_dicts = [c.to_retrieval_dict() for c in cells]
-        for i, c in enumerate(cells):
-            cell_dicts[i]["raw_text"] = c.raw_text
+        cell_dict = cell.to_retrieval_dict()
+        cell_dict["raw_text"] = cell.raw_text
 
         prev_dict = None
         if previous_meta:
@@ -48,7 +50,7 @@ class MetaCellGenerator:
                 "raw_text": previous_meta.raw_text,
             }
 
-        messages = build_meta_cell_prompt(cell_dicts, prev_dict)
+        messages = build_meta_cell_prompt(cell_dict, prev_dict)
         try:
             response = self.llm.chat_completion(
                 messages,
@@ -72,13 +74,17 @@ class MetaCellGenerator:
 
         # Fallback
         if not summary:
-            summary = self._fallback_summary(cells)
+            summary = self._fallback_summary(cell, previous_meta)
         if not keywords:
-            keywords = list(dict.fromkeys(kw for c in cells for kw in c.keywords))[:8]
+            keywords = list(dict.fromkeys(cell.keywords))[:8]
         if not entities:
-            entities = list(dict.fromkeys(e for c in cells for e in c.entities))[:5]
+            entities = list(dict.fromkeys(cell.entities))[:5]
 
         confidence = 0.3 if llm_failed else float(data.get("confidence", 0.5))
+
+        _linked_cells = list(linked_cells) if linked_cells else []
+        if cell.id not in _linked_cells:
+            _linked_cells.append(cell.id)
 
         return MemoryCell(
             id=meta_id,
@@ -89,19 +95,20 @@ class MetaCellGenerator:
             keywords=keywords,
             entities=entities,
             linked_prev=None,
-            timestamp_start=cells[0].timestamp_start,
-            timestamp_end=cells[-1].timestamp_end,
+            timestamp_start=(
+                cell.timestamp_start if not previous_meta else previous_meta.timestamp_start
+            ),
+            timestamp_end=cell.timestamp_end,
             vector_id=None,
             token_count=token_count,
             raw_text=raw_text,
             causal_deps=data.get("causal_deps", []),
             status="active",
             version=version,
-            linked_cells=[c.id for c in cells],
+            linked_cells=_linked_cells,
         )
 
-    def _fallback_summary(self, cells: list[MemoryCell]) -> str:
-        summaries = [c.summary for c in cells if c.summary]
-        if not summaries:
-            return ""
-        return " ".join(summaries)[:300]
+    def _fallback_summary(self, cell: MemoryCell, previous_meta: MemoryCell | None) -> str:
+        if previous_meta and previous_meta.summary:
+            return f"{previous_meta.summary} {cell.summary}"[:300]
+        return cell.summary[:300]

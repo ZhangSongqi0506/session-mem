@@ -46,7 +46,7 @@ class MemorySystem:
         self.cell_generator = CellGenerator(self.llm)
         self.boundary_detector = SemanticBoundaryDetector(self.llm)
         self.meta_cell_generator = MetaCellGenerator(self.llm)
-        self._cell_counter = 0
+        self._cell_counter = self._resolve_max_cell_id(cell_store)
         self._last_cell_id: str | None = None
 
     def add_turn(self, role: str, content: str, timestamp: str) -> None:
@@ -115,26 +115,38 @@ class MemorySystem:
         )
         return wm
 
-    def _update_meta_cell(self) -> None:
-        """触发 Meta Cell 的生成或全量融合更新。"""
+    def _update_meta_cell(self, newest_cell: MemoryCell) -> None:
+        """触发 Meta Cell 的生成或增量融合更新。"""
         if self.meta_cell_store is None:
-            return
-        all_cells = self.short_buffer.all_cells()
-        if not all_cells:
             return
         previous_meta = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
             self.session_id
         )
+        linked_cells = list(previous_meta.linked_cells) if previous_meta else []
         meta_cell = self.meta_cell_generator.generate(
             self.session_id,
-            all_cells,
+            newest_cell,
             previous_meta=previous_meta,
+            linked_cells=linked_cells,
         )
         getattr(self.meta_cell_store, "save_meta_cell", lambda c: None)(meta_cell)
 
     def _build_hot_zone(self, n_turns: int) -> list[str]:
         recent = self.sen_buffer.turns[-n_turns:]
         return [f"[{t.role}]: {t.content}" for t in recent]
+
+    def _resolve_max_cell_id(self, cell_store: CellStore) -> int:
+        """从持久化存储中解析当前会话的最大 Cell 序号，避免重启后 ID 冲突。"""
+        try:
+            existing = cell_store.list_by_session(self.session_id)
+            nums = [
+                int(c.id.split("_")[1])
+                for c in existing
+                if c.id.startswith("C_") and len(c.id.split("_")) == 2
+            ]
+            return max(nums) if nums else 0
+        except Exception:
+            return 0
 
     def _next_cell_id(self) -> str:
         self._cell_counter += 1
@@ -170,4 +182,4 @@ class MemorySystem:
 
         # Meta Cell 生成 / 更新
         if self.meta_cell_store is not None:
-            self._update_meta_cell()
+            self._update_meta_cell(cell)

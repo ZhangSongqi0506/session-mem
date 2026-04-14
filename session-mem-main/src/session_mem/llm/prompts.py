@@ -143,29 +143,28 @@ META_CELL_SCHEMA = {
 
 
 def build_meta_cell_prompt(
-    cells: list[dict[str, Any]],
+    cell: dict[str, Any],
     previous_meta: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """构建 Meta Cell 生成的 prompt。
 
     Args:
-        cells: 当前会话全部普通 Cell 的字典列表（按时间序）。
+        cell: 用于生成/更新 Meta Cell 的普通 Cell（初始时为首个 Cell，更新时为最新 Cell）。
         previous_meta: 上一个版本的 Meta Cell 字典，若为 None 则生成初始版本。
     """
-    cells_text = "\n\n".join(
-        f"Cell {i + 1} (ID: {c['id']}):\nSummary: {c.get('summary', '')}\n"
-        f"Keywords: {c.get('keywords', [])}\nEntities: {c.get('entities', [])}\n"
-        f"Type: {c.get('cell_type', 'fact')}\nRaw: {c.get('raw_text', '')}"
-        for i, c in enumerate(cells)
+    cell_text = (
+        f"Cell (ID: {cell['id']}):\nSummary: {cell.get('summary', '')}\n"
+        f"Keywords: {cell.get('keywords', [])}\nEntities: {cell.get('entities', [])}\n"
+        f"Type: {cell.get('cell_type', 'fact')}\nRaw: {cell.get('raw_text', '')}"
     )
     if previous_meta:
         user_content = (
             f"已有 Meta Cell 全文:\n{previous_meta.get('raw_text', '')}\n\n"
-            f"当前全部普通 Cell:\n{cells_text}\n\n"
-            "请全量融合重写 Meta Cell JSON："
+            f"最新普通 Cell:\n{cell_text}\n\n"
+            "请基于已有 Meta Cell 和最新 Cell，增量融合重写 Meta Cell JSON："
         )
     else:
-        user_content = f"当前全部普通 Cell:\n{cells_text}\n\n请生成初始 Meta Cell JSON："
+        user_content = f"当前普通 Cell:\n{cell_text}\n\n请生成初始 Meta Cell JSON："
     return [
         {"role": "system", "content": META_CELL_GENERATION_SYSTEM},
         {"role": "user", "content": user_content},
