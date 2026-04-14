@@ -155,8 +155,8 @@ Phase 4.1
   5. 完整检索链路端到端延迟 < 200ms（不含 LLM 重写时 < 50ms）
 
 ### Phase 6: 边界情况与异常处理
-- [ ] 因果链断裂防护：通过 `linked_prev` 自动加载关联约束类 Cell
-- [ ] 实体共现激活：命中 Cell 的实体与同一会话其他 Cell 有共现时，级联加载相关 Cell
+- [x] 因果链断裂防护：通过 `linked_prev` 自动加载关联约束类 Cell
+- [x] 实体共现激活：命中 Cell 的实体与同一会话其他 Cell 有共现时，级联加载相关 Cell
 - **涉及代码**:
   - `src/session_mem/core/memory_system.py`（linked_prev 追踪、实体共现激活）
   - `src/session_mem/retrieval/hybrid_search.py`（实体共现级联加载）

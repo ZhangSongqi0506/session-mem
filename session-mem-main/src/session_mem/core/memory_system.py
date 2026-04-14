@@ -120,20 +120,48 @@ class MemorySystem:
 
         # 4. 全量回溯原文
         activated: list[MemoryCell] = []
+        seen: set[str] = set()
         for cid in candidate_ids[:top_k]:
             cell = self.cell_store.get(cid)
-            if cell:
+            if cell and cell.id not in seen:
                 cell.raw_text = self.text_store.load(cid)
                 activated.append(cell)
+                seen.add(cell.id)
 
-        # 5. 获取 active Meta Cell
+        # 5. 因果链断裂防护：自动加载 linked_prev 关联 Cell
+        for cell in list(activated):
+            if cell.linked_prev and cell.linked_prev not in seen:
+                prev_cell = self.cell_store.get(cell.linked_prev)
+                if prev_cell:
+                    prev_cell.raw_text = self.text_store.load(prev_cell.id)
+                    activated.append(prev_cell)
+                    seen.add(prev_cell.id)
+
+        # 6. 实体共现激活：级联加载同实体关联 Cell（限制额外数量）
+        extra_limit = 3
+        extra_loaded = 0
+        for cell in list(activated):
+            for entity in cell.entities or []:
+                if extra_loaded >= extra_limit:
+                    break
+                related = self.cell_store.find_by_entity(self.session_id, entity)
+                for rc in related:
+                    if rc.id not in seen:
+                        rc.raw_text = self.text_store.load(rc.id)
+                        activated.append(rc)
+                        seen.add(rc.id)
+                        extra_loaded += 1
+                        if extra_loaded >= extra_limit:
+                            break
+
+        # 7. 获取 active Meta Cell
         meta_cell: MemoryCell | None = None
         if self.meta_cell_store is not None:
             meta_cell = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
                 self.session_id
             )
 
-        # 6. 组装
+        # 8. 组装
         wm = WorkingMemory(
             hot_zone=hot_zone,
             activated_cells=activated,

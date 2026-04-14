@@ -5,6 +5,18 @@
 
 ## Session: 2026-04-14
 
+### Phase 6: 边界情况与异常处理
+- **Status:** complete
+- **Actions taken:**
+  1. 实现 `linked_prev` 因果链自动加载：`MemorySystem.retrieve_context()` 在回溯命中 Cell 原文后，遍历已激活 Cell 的 `linked_prev`，将未加载的前序 Cell 自动补充进 `activated_cells`
+  2. 实现实体共现激活：遍历已激活 Cell 的 `entities`，通过 `cell_store.find_by_entity()` 级联加载同一会话中含相同实体的其他 Cell，限制额外加载上限为 3 个，避免 WorkingMemory 膨胀
+  3. 使用 `seen: set[str]` 对直接命中、因果链补充、实体共现补充三路来源进行去重，保证 Cell 不重复出现
+  4. `tests/test_retrieval.py` 新增 2 个集成测试：`test_retrieve_context_loads_linked_prev` 验证 `C_002` 命中后自动加载 `C_001`；`test_retrieve_context_activates_entity_cooccurrence` 验证同实体 "budget" 级联加载 `C_001` 与 `C_002`
+  5. 全部 66 个测试通过；black + ruff 通过
+- **Files created/modified:**
+  - `src/session_mem/core/memory_system.py`
+  - `tests/test_retrieval.py`
+
 ### Phase 5: 检索策略与 Working Memory
 - **Status:** complete
 - **Actions taken:**

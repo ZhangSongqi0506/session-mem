@@ -57,7 +57,14 @@ class FakeCellStore:
         return result
 
     def find_by_entity(self, session_id: str, entity: str) -> list[MemoryCell]:
-        return []
+        result = []
+        entity_lower = entity.lower()
+        for c in self._session_cells:
+            if c.session_id == session_id and any(
+                e.lower() == entity_lower for e in (c.entities or [])
+            ):
+                result.append(c)
+        return result
 
     def delete_session(self, session_id: str) -> None:
         pass
@@ -280,6 +287,7 @@ class TestMemorySystemRetrieveContext:
             cell_store=backend.cell_store,
             text_store=backend.text_store,
             meta_cell_store=backend,
+            query_rewriter=QueryRewriter(llm_client=None),
         )
         # add a turn so hot_zone is non-empty
         ms.add_turn("user", "What about the budget?", "2026-04-14T10:00:00Z")
@@ -290,4 +298,112 @@ class TestMemorySystemRetrieveContext:
             any("budget" in (c.raw_text or "").lower() for c in wm.activated_cells)
             or not wm.activated_cells
         )
+        backend.close()
+
+    def test_retrieve_context_loads_linked_prev(self):
+        from session_mem.core.memory_system import MemorySystem
+        from session_mem.storage.sqlite_backend import SQLiteBackend
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        backend = SQLiteBackend(db_path)
+        prev_cell = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="constraint",
+            confidence=1.0,
+            summary="budget limit",
+            keywords=["budget"],
+            entities=[],
+            raw_text="The budget must not exceed 10k.",
+            token_count=8,
+        )
+        curr_cell = MemoryCell(
+            id="C_002",
+            session_id="s1",
+            cell_type="task",
+            confidence=1.0,
+            summary="planning task",
+            keywords=["plan"],
+            entities=[],
+            raw_text="We need to plan the project.",
+            token_count=7,
+            linked_prev="C_001",
+        )
+        backend.cell_store.save(prev_cell)
+        backend.text_store.save(prev_cell.id, prev_cell.raw_text, prev_cell.token_count)
+        backend.cell_store.save(curr_cell)
+        backend.text_store.save(curr_cell.id, curr_cell.raw_text, curr_cell.token_count)
+
+        # hybrid will find C_002 via keyword scan
+        ms = MemorySystem(
+            session_id="s1",
+            llm_client=FakeLLMClient(),
+            vector_index=backend.vector_index,
+            cell_store=backend.cell_store,
+            text_store=backend.text_store,
+            meta_cell_store=backend,
+            query_rewriter=QueryRewriter(llm_client=None),
+        )
+        ms.add_turn("user", "What is the plan?", "2026-04-14T10:00:00Z")
+
+        wm = ms.retrieve_context("plan", hot_zone_turns=2, top_k=2)
+        ids = {c.id for c in wm.activated_cells}
+        assert "C_002" in ids
+        assert "C_001" in ids
+        backend.close()
+
+    def test_retrieve_context_activates_entity_cooccurrence(self):
+        from session_mem.core.memory_system import MemorySystem
+        from session_mem.storage.sqlite_backend import SQLiteBackend
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        backend = SQLiteBackend(db_path)
+        cell1 = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="budget fact",
+            keywords=["budget"],
+            entities=["budget"],
+            raw_text="Budget is 10k.",
+            token_count=4,
+        )
+        cell2 = MemoryCell(
+            id="C_002",
+            session_id="s1",
+            cell_type="constraint",
+            confidence=1.0,
+            summary="budget constraint",
+            keywords=["budget"],
+            entities=["budget"],
+            raw_text="Budget must be under 10k.",
+            token_count=6,
+        )
+        backend.cell_store.save(cell1)
+        backend.text_store.save(cell1.id, cell1.raw_text, cell1.token_count)
+        backend.cell_store.save(cell2)
+        backend.text_store.save(cell2.id, cell2.raw_text, cell2.token_count)
+
+        ms = MemorySystem(
+            session_id="s1",
+            llm_client=FakeLLMClient(),
+            vector_index=backend.vector_index,
+            cell_store=backend.cell_store,
+            text_store=backend.text_store,
+            meta_cell_store=backend,
+            query_rewriter=QueryRewriter(llm_client=None),
+        )
+        ms.add_turn("user", "Tell me about budget.", "2026-04-14T10:00:00Z")
+
+        wm = ms.retrieve_context("budget", hot_zone_turns=2, top_k=2)
+        ids = {c.id for c in wm.activated_cells}
+        assert "C_001" in ids
+        assert "C_002" in ids
         backend.close()
