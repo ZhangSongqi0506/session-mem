@@ -264,29 +264,29 @@ class SQLiteBackend:
 
     def save_meta_cell(self, cell: MemoryCell) -> None:
         """保存或更新 Meta Cell；将同一 session 的旧版本标记为 archived。"""
-        self.conn.execute(
-            "UPDATE meta_cells SET status = 'archived' WHERE session_id = ? AND status = 'active'",
-            (cell.session_id,),
-        )
-        self.conn.execute(
-            """
-            INSERT INTO meta_cells (
-                session_id, cell_id, version, cell_type, status,
-                raw_text, token_count, linked_cells, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                cell.session_id,
-                cell.id,
-                cell.version or 1,
-                cell.cell_type or "meta",
-                cell.status or "active",
-                cell.raw_text,
-                cell.token_count,
-                json.dumps(cell.linked_cells, ensure_ascii=False),
-            ),
-        )
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE meta_cells SET status = 'archived' WHERE session_id = ? AND status = 'active'",
+                (cell.session_id,),
+            )
+            self.conn.execute(
+                """
+                INSERT INTO meta_cells (
+                    session_id, cell_id, version, cell_type, status,
+                    raw_text, token_count, linked_cells, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    cell.session_id,
+                    cell.id,
+                    cell.version or 1,
+                    cell.cell_type or "meta",
+                    cell.status or "active",
+                    cell.raw_text,
+                    cell.token_count,
+                    json.dumps(cell.linked_cells, ensure_ascii=False),
+                ),
+            )
 
     def get_active_meta_cell(self, session_id: str) -> MemoryCell | None:
         """获取指定会话当前 active 的 Meta Cell。"""

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from session_mem.core.buffer import SenMemBuffer, ShortMemBuffer, Turn
@@ -12,6 +13,8 @@ from session_mem.llm.base import LLMClient
 from session_mem.retrieval.hybrid_search import HybridSearcher
 from session_mem.storage.base import CellStore, TextStore, VectorIndex
 from session_mem.utils.tokenizer import TokenEstimator
+
+logger = logging.getLogger(__name__)
 
 
 class MemorySystem:
@@ -174,8 +177,8 @@ class MemorySystem:
                 embeddings = self.embedding_client.embed([cell.raw_text])
                 if embeddings:
                     self.vector_index.add(cell.vector_id or cell.id, embeddings[0])
-            except Exception:
-                pass  # 降级：embedding 失败不阻塞主流程
+            except Exception as exc:
+                logger.warning("Embedding failed for cell %s: %s", cell.id, exc)
 
         self.short_buffer.add(cell)
         self._last_cell_id = cell.id

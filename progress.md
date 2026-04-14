@@ -21,7 +21,9 @@
   1. 修复 Cell ID 生成器非持久化：初始化时从 cell_store 解析最大序号
   2. 修复 causal_deps / metadata 有生成无存储：SQLite schema 新增两列并同步序列化
   3. 修复 Meta Cell 更新偏离技术方案：由全量 cells 输入改为增量 single-cell 输入（previous_meta.raw_text + newest_cell.raw_text）
-  4. 更新对应测试，全部 43 个测试通过
+  4. 修复 save_meta_cell() 非原子操作：使用 `with self.conn:` 显式事务包裹 UPDATE + INSERT
+  5. 修复 Embedding 失败静默吞异常：`_generate_cell()` 中 `except Exception` 改为 `logger.warning` 记录失败信息
+  6. 更新对应测试，全部 43 个测试通过；black + ruff 通过
 - **Files created/modified:**
   - `src/session_mem/llm/base.py`（新增 embed 抽象）
   - `src/session_mem/llm/qwen_client.py`（新增 embed 实现与 Embedding 配置）
