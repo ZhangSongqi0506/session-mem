@@ -58,7 +58,7 @@
 |-------|------------|
 | 文档章节从 4 跳到 6 | 删除原第 5 章内容，将 6.x 改为 5.x |
 | git push 到空仓库失败 | 先创建初始 commit 再 push |
-| 向量维度 512 vs 1024 不一致 | 技术方案 v2.0 和 AGENTS.md 已统一为 1024；`sqlite_backend.py` 将在 Phase 2 修正 |
+| 向量维度 512 vs 1024 不一致 | 技术方案 v2.0 和 AGENTS.md 已统一为 1024；`sqlite_backend.py` 已在 2026-04-14 热修复 |
 | `SenMemBuffer.gap_detected()` 尚未实现 ISO 8601 解析 | 当前返回 False 占位，需在 Phase 3 补充 datetime 解析逻辑 |
 | `HybridSearcher.search()` 尚未实现 | 当前返回空列表占位，需在 Phase 5 补充向量+关键词融合逻辑 |
 | `MetaCellGenerator` 尚未实现 | 已创建 `meta_cell_generator.py` 占位模块，需在 Phase 4 补充 LLM 融合逻辑 |

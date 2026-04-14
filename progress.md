@@ -6,7 +6,7 @@
 ## Session: 2026-04-14
 
 ### 文档与规划更新 + 代码热修复
-- **Status:** in_progress
+- **Status:** complete
 - **Actions taken:**
   - 重新梳理 `task_plan.md`，为每个 Phase 补充：涉及的具体代码文件、数据库构建细节、验收标准
   - 修正并明确向量维度统一为 1024（bge-large-en-v1.5）
@@ -144,7 +144,7 @@
 | Where am I going? | Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 |
 | What's the goal? | 实现 session-mem MVP，包含三层缓冲、Cell 检索、时间戳解析，Token 节省率 ≥40%，准确率损失 <5% |
 | What have I learned? | See findings.md；核心结论是：骨架代码已覆盖全部模块，当前重点是补齐存储层维度修正、边界检测触发逻辑、检索融合算法 |
-| What have I done? | Phase 1 完成；task_plan.md / findings.md / progress.md 已根据技术方案 v2.0 更新；已知 512/1024 维度问题待修 |
+| What have I done? | Phase 1 完成；task_plan.md / findings.md / progress.md 已根据技术方案 v2.0 更新；512/1024 维度问题已在 2026-04-14 热修复 |
 
 ---
 *Update after completing each phase or encountering errors*

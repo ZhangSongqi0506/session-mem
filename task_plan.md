@@ -42,7 +42,7 @@ Phase 2
 - **Status:** complete
 
 ### Phase 2: 存储层完善与数据库构建
-- [ ] 修正向量维度不一致问题：`sqlite_backend.py` 与 `AGENTS.md` 统一为 **1024 维**（适配 bge-large-en-v1.5）
+- [x] 修正向量维度不一致问题：`sqlite_backend.py` 与 `AGENTS.md` 统一为 **1024 维**（适配 bge-large-en-v1.5）
 - [ ] 完善 SQLite schema：确保 `cell_type` 枚举包含 `fragmented`，补充 `cells` 表缺失字段与外键约束
 - [ ] 实现存储层单元测试：CRUD、会话隔离、实体共现查询、向量增删查
 - [ ] 解决 sqlite-vec 依赖与多线程使用注意事项
