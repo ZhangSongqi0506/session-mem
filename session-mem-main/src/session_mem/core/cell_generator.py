@@ -8,6 +8,10 @@ from session_mem.llm.parser import safe_json_loads
 from session_mem.llm.prompts import build_cell_generation_prompt, CELL_GENERATION_SCHEMA
 from session_mem.utils.tokenizer import TokenEstimator
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class CellGenerator:
     """Cell 生成器：将 SenMemBuffer 中的对话打包为 MemoryCell。"""
@@ -31,7 +35,8 @@ class CellGenerator:
                 temperature=0.3,
                 response_format=CELL_GENERATION_SCHEMA,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("LLM chat_completion failed for cell generation: %s", exc)
             response = ""
         data = safe_json_loads(response) or {}
 

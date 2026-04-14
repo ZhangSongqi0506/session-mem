@@ -85,7 +85,8 @@ class SQLiteCellStore(CellStore):
             CREATE TABLE IF NOT EXISTS entity_links (
                 cell_id TEXT,
                 entity TEXT,
-                FOREIGN KEY (cell_id) REFERENCES cells(id)
+                PRIMARY KEY (cell_id, entity),
+                FOREIGN KEY (cell_id) REFERENCES cells(id) ON DELETE CASCADE
             )
             """)
         self.conn.execute(
@@ -108,14 +109,14 @@ class SQLiteCellStore(CellStore):
                 cell.cell_type,
                 cell.confidence,
                 cell.summary,
-                json.dumps(cell.keywords, ensure_ascii=False),
-                json.dumps(cell.entities, ensure_ascii=False),
+                json.dumps(cell.keywords or [], ensure_ascii=False),
+                json.dumps(cell.entities or [], ensure_ascii=False),
                 cell.linked_prev,
                 cell.timestamp_start,
                 cell.timestamp_end,
                 cell.vector_id,
-                json.dumps(cell.causal_deps, ensure_ascii=False),
-                json.dumps(cell.metadata, ensure_ascii=False),
+                json.dumps(cell.causal_deps or [], ensure_ascii=False),
+                json.dumps(cell.metadata or {}, ensure_ascii=False),
             ),
         )
         # 更新实体共现表
@@ -154,19 +155,9 @@ class SQLiteCellStore(CellStore):
         return [self._row_to_cell(r) for r in rows]
 
     def delete_session(self, session_id: str) -> None:
-        cell_ids = [
-            r[0]
-            for r in self.conn.execute(
-                "SELECT id FROM cells WHERE session_id = ?", (session_id,)
-            ).fetchall()
-        ]
-        for cid in cell_ids:
-            self.conn.execute("DELETE FROM entity_links WHERE cell_id = ?", (cid,))
-            self.conn.execute("DELETE FROM cell_texts WHERE cell_id = ?", (cid,))
-            self.conn.execute("DELETE FROM cell_vectors WHERE cell_id = ?", (cid,))
-        self.conn.execute("DELETE FROM meta_cells WHERE session_id = ?", (session_id,))
-        self.conn.execute("DELETE FROM cells WHERE session_id = ?", (session_id,))
-        self.conn.commit()
+        with self.conn:
+            # entity_links 和 cell_texts 已声明 ON DELETE CASCADE
+            self.conn.execute("DELETE FROM cells WHERE session_id = ?", (session_id,))
 
     def _row_to_cell(self, row: sqlite3.Row) -> MemoryCell:
         return MemoryCell(
@@ -199,7 +190,7 @@ class SQLiteTextStore(TextStore):
                 cell_id TEXT PRIMARY KEY,
                 raw_text TEXT,
                 token_count INTEGER,
-                FOREIGN KEY (cell_id) REFERENCES cells(id)
+                FOREIGN KEY (cell_id) REFERENCES cells(id) ON DELETE CASCADE
             )
             """)
         self.conn.commit()
@@ -235,6 +226,7 @@ class SQLiteBackend:
         self.conn.enable_load_extension(True)
         sqlite_vec.load(self.conn)
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")
         self.vector_index = SQLiteVectorIndex(self.conn, dims=vector_dims)
         self.cell_store = SQLiteCellStore(self.conn)
         self.text_store = SQLiteTextStore(self.conn)
@@ -251,6 +243,8 @@ class SQLiteBackend:
                 raw_text TEXT,
                 token_count INTEGER DEFAULT 0,
                 linked_cells TEXT,
+                keywords TEXT,
+                entities TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (session_id, version)
@@ -260,6 +254,15 @@ class SQLiteBackend:
             "CREATE INDEX IF NOT EXISTS idx_meta_cells_session ON meta_cells(session_id)"
         )
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_cells_status ON meta_cells(status)")
+        # 自动更新 updated_at 触发器
+        self.conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_meta_cells_updated_at
+            AFTER UPDATE ON meta_cells
+            FOR EACH ROW
+            BEGIN
+                UPDATE meta_cells SET updated_at = CURRENT_TIMESTAMP WHERE rowid = NEW.rowid;
+            END;
+            """)
         self.conn.commit()
 
     def save_meta_cell(self, cell: MemoryCell) -> None:
@@ -273,18 +276,20 @@ class SQLiteBackend:
                 """
                 INSERT INTO meta_cells (
                     session_id, cell_id, version, cell_type, status,
-                    raw_text, token_count, linked_cells, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    raw_text, token_count, linked_cells, keywords, entities, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     cell.session_id,
                     cell.id,
                     cell.version or 1,
-                    cell.cell_type or "meta",
+                    "meta",
                     cell.status or "active",
                     cell.raw_text,
                     cell.token_count,
-                    json.dumps(cell.linked_cells, ensure_ascii=False),
+                    json.dumps(cell.linked_cells or [], ensure_ascii=False),
+                    json.dumps(cell.keywords or [], ensure_ascii=False),
+                    json.dumps(cell.entities or [], ensure_ascii=False),
                 ),
             )
 
@@ -307,6 +312,8 @@ class SQLiteBackend:
             confidence=1.0,
             summary=row["raw_text"] or "",
             raw_text=row["raw_text"] or "",
+            keywords=json.loads(row["keywords"] or "[]"),
+            entities=json.loads(row["entities"] or "[]"),
             token_count=row["token_count"] or 0,
             status=row["status"],
             version=row["version"],
@@ -317,6 +324,31 @@ class SQLiteBackend:
         """删除指定会话的全部 Meta Cell。"""
         self.conn.execute("DELETE FROM meta_cells WHERE session_id = ?", (session_id,))
         self.conn.commit()
+
+    def delete_session(self, session_id: str) -> None:
+        """级联删除指定会话的全部数据。"""
+        with self.conn:
+            # cell_vectors 是虚拟表，不支持外键级联，需手动删除
+            self.conn.execute(
+                "DELETE FROM cell_vectors WHERE cell_id IN (SELECT id FROM cells WHERE session_id = ?)",
+                (session_id,),
+            )
+            # cell_texts 和 entity_links 已声明 ON DELETE CASCADE
+            self.conn.execute("DELETE FROM meta_cells WHERE session_id = ?", (session_id,))
+            self.conn.execute("DELETE FROM cells WHERE session_id = ?", (session_id,))
+
+    def get_full_cell(self, cell_id: str) -> MemoryCell | None:
+        """从 CellStore 获取 Cell 并回填 raw_text 和 token_count。"""
+        cell = self.cell_store.get(cell_id)
+        if cell is None:
+            return None
+        row = self.conn.execute(
+            "SELECT raw_text, token_count FROM cell_texts WHERE cell_id = ?", (cell_id,)
+        ).fetchone()
+        if row:
+            cell.raw_text = row["raw_text"] or ""
+            cell.token_count = row["token_count"] or 0
+        return cell
 
     def close(self) -> None:
         """关闭数据库连接。"""

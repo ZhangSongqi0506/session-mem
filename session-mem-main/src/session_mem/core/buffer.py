@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
 from session_mem.core.cell import MemoryCell
 from session_mem.storage.base import CellStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,9 +56,9 @@ class SenMemBuffer:
         tokens = self.estimated_tokens()
         if tokens >= self.hard_limit:
             return False
-        next_threshold = self.soft_limit * (self._check_count + 1)
-        if tokens >= next_threshold:
-            self._check_count += 1
+        current_multiple = tokens // self.soft_limit
+        if current_multiple > self._check_count and current_multiple >= 1:
+            self._check_count = current_multiple
             return True
         return False
 
@@ -73,11 +76,14 @@ class SenMemBuffer:
             dt_curr = datetime.fromisoformat(t_curr)
             diff_minutes = (dt_curr - dt_prev).total_seconds() / 60
             return diff_minutes > self.gap_threshold_minutes
-        except Exception:
+        except Exception as exc:
+            logger.warning("Timestamp parsing failed: %s", exc)
             return False
 
     def extract_for_cell(self, cutoff_index: int) -> list[Turn]:
         """提取前 cutoff_index 轮用于生成 Cell，剩余留在 Buffer。"""
+        if cutoff_index <= 0:
+            return []
         cell_turns = self.turns[:cutoff_index]
         self.turns = self.turns[cutoff_index:]
         self._check_count = 0
@@ -103,7 +109,10 @@ class ShortMemBuffer:
         self._cache.append(cell)
 
     def all_cells(self) -> list[MemoryCell]:
-        return self.cell_store.list_by_session(self.session_id)
+        stored = {c.id: c for c in self.cell_store.list_by_session(self.session_id)}
+        for c in self._cache:
+            stored[c.id] = c
+        return list(stored.values())
 
     def get(self, cell_id: str) -> MemoryCell | None:
         for c in self._cache:

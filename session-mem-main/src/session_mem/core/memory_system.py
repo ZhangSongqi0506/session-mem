@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import re
+
 from session_mem.core.buffer import SenMemBuffer, ShortMemBuffer, Turn
 from session_mem.core.cell import MemoryCell
 from session_mem.core.cell_generator import CellGenerator
@@ -75,6 +77,7 @@ class MemorySystem:
                 cutoff = max(1, len(self.sen_buffer.turns) - 1)
                 cell_turns = self.sen_buffer.extract_for_cell(cutoff)
                 self._generate_cell(cell_turns, fragmented=False)
+            return
 
     def retrieve_context(
         self,
@@ -142,13 +145,14 @@ class MemorySystem:
         """从持久化存储中解析当前会话的最大 Cell 序号，避免重启后 ID 冲突。"""
         try:
             existing = cell_store.list_by_session(self.session_id)
-            nums = [
-                int(c.id.split("_")[1])
-                for c in existing
-                if c.id.startswith("C_") and len(c.id.split("_")) == 2
-            ]
+            nums = []
+            for c in existing:
+                match = re.match(r"^C_(\d+)$", c.id)
+                if match:
+                    nums.append(int(match.group(1)))
             return max(nums) if nums else 0
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to resolve max cell id: %s", exc)
             return 0
 
     def _next_cell_id(self) -> str:

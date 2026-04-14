@@ -23,7 +23,18 @@
   3. 修复 Meta Cell 更新偏离技术方案：由全量 cells 输入改为增量 single-cell 输入（previous_meta.raw_text + newest_cell.raw_text）
   4. 修复 save_meta_cell() 非原子操作：使用 `with self.conn:` 显式事务包裹 UPDATE + INSERT
   5. 修复 Embedding 失败静默吞异常：`_generate_cell()` 中 `except Exception` 改为 `logger.warning` 记录失败信息
-  6. 更新对应测试，全部 43 个测试通过；black + ruff 通过
+  6. 修复 should_trigger_check() 阈值跨越缺陷：改为 `current_multiple = tokens // soft_limit`，避免单次跨越多个阈值时连续触发
+  7. 修复 gap_detected() 静默失败：增加 `logger.warning` 记录时间戳解析异常
+  8. 修复 ShortMemBuffer.all_cells() 忽略缓存：合并 `_cache` 与 `cell_store` 结果并去重
+  9. 修复 add_turn() 软限分支缺 return：语义边界检测后显式 `return`
+  10. 修复 extract_for_cell() 无防御：增加 `cutoff_index <= 0` 时返回空列表
+  11. 修复 safe_json_loads 尾逗号正则破坏字符串：仅在正则提取的花括号范围内执行去尾逗号
+  12. 修复 CellGenerator LLM 异常静默：增加 `logger.warning`
+  13. 修复 _resolve_max_cell_id() 异常时重置为 0：使用 `re.match(r"^C_(\d+)$", c.id)` 健壮解析
+  14. 修复 Meta Cell raw_text 不累积：改为 `previous_meta.raw_text + newest_cell.raw_text` 的累积格式
+  15. 修复 build_meta_cell_prompt 增量原则偏差：Prompt 中仅传入 `cell.raw_text` 和 `previous_meta.raw_text`
+  16. 修复 SQLite 存储层事务与 schema 缺陷：启用 WAL、entity_links/cell_texts 加 ON DELETE CASCADE、delete_session 提升到 SQLiteBackend、json.dumps 防御 None、meta_cells 增加 keywords/entities 列与 updated_at 触发器、新增 `get_full_cell()`
+  17. 全部 44 个测试通过；black + ruff 通过
 - **Files created/modified:**
   - `src/session_mem/llm/base.py`（新增 embed 抽象）
   - `src/session_mem/llm/qwen_client.py`（新增 embed 实现与 Embedding 配置）

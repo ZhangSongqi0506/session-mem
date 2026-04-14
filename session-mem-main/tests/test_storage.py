@@ -154,7 +154,7 @@ def test_delete_session_cascades(backend: SQLiteBackend) -> None:
     )
     backend.save_meta_cell(meta)
 
-    backend.cell_store.delete_session("s1")
+    backend.delete_session("s1")
 
     assert backend.cell_store.list_by_session("s1") == []
     assert backend.text_store.load("c1") == ""
@@ -219,6 +219,24 @@ def test_cell_type_fragmented(backend: SQLiteBackend) -> None:
     retrieved = backend.cell_store.get("c_frag")
     assert retrieved is not None
     assert retrieved.cell_type == "fragmented"
+
+
+def test_get_full_cell_backfills_text_and_tokens(backend: SQLiteBackend) -> None:
+    backend.cell_store.save(
+        MemoryCell(
+            id="c1",
+            session_id="s1",
+            cell_type="fact",
+            confidence=0.9,
+            summary="summary",
+        )
+    )
+    backend.text_store.save("c1", "full raw text", token_count=123)
+
+    cell = backend.get_full_cell("c1")
+    assert cell is not None
+    assert cell.raw_text == "full raw text"
+    assert cell.token_count == 123
 
 
 def test_causal_deps_and_metadata_persistence(backend: SQLiteBackend) -> None:

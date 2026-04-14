@@ -62,12 +62,11 @@ class MetaCellGenerator:
 
         data = safe_json_loads(response) or {}
 
-        raw_text = data.get("summary", "")
-        token_count = self.token_estimator.estimate(raw_text)
+        llm_summary = data.get("summary", "")
         version = (previous_meta.version or 0) + 1 if previous_meta else 1
         meta_id = f"M_{version:03d}"
 
-        summary = data.get("summary", "")
+        summary = llm_summary
         keywords = data.get("keywords", [])
         entities = data.get("entities", [])
         llm_failed = not data
@@ -80,6 +79,13 @@ class MetaCellGenerator:
         if not entities:
             entities = list(dict.fromkeys(cell.entities))[:5]
 
+        # raw_text 累积保存历史上下文，确保增量更新不丢失信息
+        if previous_meta and previous_meta.raw_text:
+            raw_text = f"{previous_meta.raw_text}\n\n[Cell {cell.id}]\n{cell.raw_text}"
+        else:
+            raw_text = f"[Cell {cell.id}]\n{cell.raw_text}"
+
+        token_count = self.token_estimator.estimate(raw_text)
         confidence = 0.3 if llm_failed else float(data.get("confidence", 0.5))
 
         _linked_cells = list(linked_cells) if linked_cells else []

@@ -44,21 +44,21 @@ def safe_json_loads(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             pass
 
-    # 4. 尝试用正则提取最外层花括号内容
+    # 4. 尝试用正则提取最外层花括号内容，并在提取范围内去尾逗号
     import re
 
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
+        snippet = match.group(0)
         try:
-            return json.loads(match.group(0))
+            return json.loads(snippet)
         except json.JSONDecodeError:
             pass
-
-    # 5. 尝试去掉尾部逗号后解析（常见 LLM 错误：最后一个字段带逗号）
-    no_trailing_comma = re.sub(r",(\s*[}\]])", r"\1", text)
-    try:
-        return json.loads(no_trailing_comma)
-    except json.JSONDecodeError:
-        pass
+        # 在提取的花括号范围内去尾逗号，避免破坏外层字符串
+        no_trailing_comma = re.sub(r",(\s*[}\]])", r"\1", snippet)
+        try:
+            return json.loads(no_trailing_comma)
+        except json.JSONDecodeError:
+            pass
 
     return None

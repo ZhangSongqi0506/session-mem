@@ -152,11 +152,7 @@ def build_meta_cell_prompt(
         cell: 用于生成/更新 Meta Cell 的普通 Cell（初始时为首个 Cell，更新时为最新 Cell）。
         previous_meta: 上一个版本的 Meta Cell 字典，若为 None 则生成初始版本。
     """
-    cell_text = (
-        f"Cell (ID: {cell['id']}):\nSummary: {cell.get('summary', '')}\n"
-        f"Keywords: {cell.get('keywords', [])}\nEntities: {cell.get('entities', [])}\n"
-        f"Type: {cell.get('cell_type', 'fact')}\nRaw: {cell.get('raw_text', '')}"
-    )
+    cell_text = f"Cell (ID: {cell['id']}):\n{cell.get('raw_text', '')}"
     if previous_meta:
         user_content = (
             f"已有 Meta Cell 全文:\n{previous_meta.get('raw_text', '')}\n\n"
