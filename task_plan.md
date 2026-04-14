@@ -71,6 +71,7 @@ Phase 1
 | Python 实现 | 团队熟悉、生态丰富、便于与 LangChain 集成 |
 | qwen2.5:72b 作为 LLM 后端 | 内网已有部署，语义边界检测与 Cell 生成统一模型，降低成本 |
 | 语义边界检测独立新会话 | 避免边界检测调用污染主会话上下文，保证 token 隔离 |
+| uv 作为包管理工具 | 极速依赖解析，统一替代 pip+venv，与 pyproject.toml 原生兼容 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

@@ -15,7 +15,7 @@
 ## 快速开始
 
 ```bash
-pip install -e .
+uv pip install -e .
 ```
 
 ## 项目结构

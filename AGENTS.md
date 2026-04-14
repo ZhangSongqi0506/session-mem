@@ -33,7 +33,7 @@
 | 层级 | 技术/工具 | 说明 |
 |------|----------|------|
 | 编程语言 | Python 3.11+ | 主开发语言 |
-| 包管理 | `hatchling` / `pip` | 构建后端使用 hatchling，开发期可用 pip install -e . |
+| 包管理 | `uv` | 虚拟环境管理与依赖安装均使用 uv |
 | 向量索引 | sqlite-vec | 零运维、单文件的 SQLite 向量扩展 |
 | 向量检索 | bge-large-en-v1.5（可选） | 通过 Xinference 本地部署，OpenAI 兼容接口 |
 | 核心 LLM | qwen2.5:72b-instruct-nq | 内网 OpenAI 兼容接口，用于语义边界检测和 Cell 生成 |
@@ -89,7 +89,7 @@ C:\zsq\单会话项目\session-mem-main/
 ### 3.1 核心原则
 
 **必须遵守**:
-1. **虚拟环境**: 使用 `conda` 管理环境（`session-mem`，Python 3.11）
+1. **虚拟环境**: 使用 `uv` 管理环境（Python 3.11）
 2. **Git 同步**: 任何代码修改后立即提交并推送
 3. **数据隔离**: 模型权重、数据集、实验结果、日志不提交到 git
 4. **测试优先**: 修改核心逻辑后运行相关测试
@@ -110,7 +110,7 @@ C:\zsq\单会话项目\session-mem-main/
 ### 3.3 代码风格
 
 
-### 3.4 环境配置（conda）
+### 3.4 环境配置（uv）
 
 
 
@@ -264,7 +264,7 @@ EMBEDDING_DIMS = 1024
 - 服务器运行路径: /home/zhangsongqi/session-mem
 - 命名规范: 类名 PascalCase，函数/变量 snake_case
 - 文件编码: UTF-8
-- 包管理: conda / uv（后续确定）
+- 包管理: uv
 - 子代理只能编辑代码，不能运行代码
 - **Phase 确认规则：每个 Phase 完成后必须获得用户确认才能标记 complete**
 
@@ -284,9 +284,14 @@ EMBEDDING_DIMS = 1024
 1. 项目路径: C:\zsq\单会话项目\session-mem-main (本地) / /home/zhangsongqi/session-mem (服务器)
 2. 命名规范: PascalCase 类名，snake_case 函数
 3. 编码: UTF-8
-4. 包管理: conda / uv（后续确定）
+4. 包管理: uv
 5. 子代理只编辑不运行
 6. Phase 确认规则：每个 Phase 完成后必须获得用户确认才能标记 complete"
+
+## 补充说明：为什么使用 uv
+- 极速依赖解析与安装，显著提升开发迭代效率
+- 统一替代 pip + venv + pip-tools，减少工具链复杂度
+- 与 pyproject.toml 原生兼容
 
 确认后，我会发送具体任务需求。
 ```
@@ -359,8 +364,8 @@ Task(
                                               ▼
                                  ┌──────────────────────┐
                                  │ 4. 运行/测试         │
-                                 │    - conda activate  │
-                                 │      session-mem     │
+                                 │    - .venv\Scripts\  │
+                                 │      activate        │
                                  │    - 安装依赖        │
                                  │    - source .env     │
                                  │    - 运行 benchmark  │

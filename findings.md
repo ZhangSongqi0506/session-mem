@@ -31,6 +31,7 @@
 | SQLite + sqlite-vec 作为默认存储后端 | 零运维、单文件、适合组件化分发；schema 预留 session_id 支持未来跨会话扩展 |
 | Python 实现 | 与 LangChain 生态天然契合，团队熟练度高 |
 | qwen2.5:72b 作为统一 LLM 后端 | 内网已部署，语义边界检测和 Cell 生成共用同一模型；边界检测以独立新会话调用，不影响主会话 token |
+| uv 作为包管理工具 | 极速依赖解析，统一替代 pip+venv+pip-tools，与 pyproject.toml 原生兼容 |
 
 ## Issues Encountered
 | Issue | Resolution |
