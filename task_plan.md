@@ -133,7 +133,7 @@ Phase 4.1
   4. 生成的多个 Cell 均正确写入 SQLite，且 `linked_prev` 链连续
   5. 多 Cell 生成后，Meta Cell 更新仅触发 **1 次**（基于最新生成的 Cell 做增量融合，而非每个 Cell 都更新）
   6. 全部单元测试通过；black + ruff 通过
-- **Status:** in_progress
+- **Status:** complete
 
 ### Phase 5: 检索策略与 Working Memory
 - [ ] 实现 `QueryRewriter`：基于热区上下文的指代消解、短查询扩展（<10 tokens 触发）
