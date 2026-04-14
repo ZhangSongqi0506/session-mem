@@ -108,6 +108,8 @@
 
 *   **内容构成**：
     
+    *   **Meta Cell 全局摘要**：会话主旨单元，强制常驻（约 200-600 tokens，随会话深度动态增长）
+    
     *   **热区原文**：最近 2-3 轮对话（未压缩，保证对话连贯性，约 400 tokens）
         
     *   **激活 Cell 原文**：通过检索选中的 1-2 个 Cell 的**完整原文**（从冷区按需回溯，约 800-1200 tokens）
@@ -126,9 +128,9 @@
     
     *   20 轮全量历史约 4000+ tokens
         
-    *   本方案仅携带：热区 400 + 命中 Cell 原文 1000 + 查询 100 = **约 1500 tokens**
+    *   本方案仅携带：Meta Cell 400 + 热区 400 + 命中 Cell 原文 1000 + 查询 100 = **约 1900 tokens**
         
-    *   **节省率 60%+** 来源于**丢弃未被引用的历史 Cell**，而非压缩命中 Cell 的内容
+    *   **节省率 50%+** 来源于**丢弃未被引用的历史 Cell**，而非压缩命中 Cell 的内容。Meta Cell 以少量额外 Token 换取全局主旨的确定性不丢
         
 
 ---
@@ -358,7 +360,7 @@ Prompt 内具体标签名称（如 `[会话主旨]`、`[全局上下文]` 等）
 
 ```python
 # 伪代码逻辑
-def assemble_working_memory(query, hot_zone, faiss_index, cold_storage):
+def assemble_working_memory(query, hot_zone, faiss_index, cold_storage, meta_cell):
     # 1. 检索（向量+关键词混合）
     candidate_cells = retrieve_top_k(query, faiss_index, k=2)  # 仅取Top-2
     
@@ -368,8 +370,8 @@ def assemble_working_memory(query, hot_zone, faiss_index, cold_storage):
         full_text = cold_storage.load(cell.pointer)  # 完整原文，不截断
         activated_content.append(full_text)
     
-    # 3. 组装（热区 + 命中Cell全文 + 查询）
-    prompt_context = hot_zone + activated_content + [query]
+    # 3. 组装（Meta Cell + 热区 + 命中Cell全文 + 查询）
+    prompt_context = [meta_cell.raw_text] + hot_zone + activated_content + [query]
     return prompt_context
 ```
 
@@ -378,6 +380,8 @@ def assemble_working_memory(query, hot_zone, faiss_index, cold_storage):
 既然**不压缩命中内容**，如何保证**不丢失关键约束**？
 
 *   **全文保真**：只要 Cell 被命中，用户第 2 轮说的"预算 1 万"原话，第 20 轮依然原封不动出现在 Prompt 中
+    
+*   **Meta Cell 兜底**：即使某约束所在的普通 Cell 未被检索命中，Meta Cell 中仍保留该约束的摘要形态（如"预算上限 1 万元"），避免主旨任务完全丢失
     
 *   **防漏召回**：通过**时序链接**主动激活关联 Cell（见 6.2 节），避免"预算约束在第 2 轮 Cell，第 20 轮查询只命中折扣 Cell，导致遗忘预算"的问题
     
@@ -456,6 +460,27 @@ CREATE VIRTUAL TABLE cell_vectors USING vec0(
 );
 ```
 
+**表 5：meta_cells（主旨单元，独立维护会话级全局摘要）**
+
+```sql
+CREATE TABLE meta_cells (
+    session_id TEXT,
+    cell_id TEXT,           -- 固定格式如 META
+    version INTEGER,        -- 从 1 开始递增
+    cell_type TEXT DEFAULT 'meta',
+    status TEXT CHECK(status IN ('active', 'archived')),
+    raw_text TEXT,          -- 实际注入 Prompt 的全局摘要全文
+    token_count INTEGER,
+    linked_cells TEXT,      -- JSON array，记录融合过的普通 Cell ID 列表
+    created_at DATETIME,
+    updated_at DATETIME,
+    PRIMARY KEY (session_id, version)
+);
+
+CREATE INDEX idx_meta_cells_session ON meta_cells(session_id);
+CREATE INDEX idx_meta_cells_status ON meta_cells(status);
+```
+
 ### 5.3 内存与磁盘的分层关系
 
 MVP 阶段，ShortMemBuffer 仅作为**逻辑索引概念**存在：所有 Cell 的元数据和向量索引均保存在 SQLite 中，检索时直接查询数据库。内存中不维护复杂的分级缓存：
@@ -509,7 +534,7 @@ MVP 阶段，ShortMemBuffer 仅作为**逻辑索引概念**存在：所有 Cell
 
 当检索无匹配（如用户突然问与历史无关的问题）：
 
-*   **零回溯模式**：工作记忆仅包含热区原文（最近 2 轮）+ 当前查询，不强行引入无关 Cell
+*   **零回溯模式**：工作记忆包含 Meta Cell（全局主旨仍保留）+ 热区原文（最近 2 轮）+ 当前查询，不强行引入无关的普通 Cell
     
 *   **新话题检测**：若连续 3 轮检索置信度 <0.5，触发"新话题"标记，清空 SenMemBuffer（旧话题原文强制生成 Cell 归档），避免旧话题碎片干扰新话题
     
