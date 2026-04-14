@@ -157,17 +157,12 @@ Phase 4.1
 ### Phase 6: 边界情况与异常处理
 - [ ] 因果链断裂防护：通过 `linked_prev` 自动加载关联约束类 Cell
 - [ ] 实体共现激活：命中 Cell 的实体与同一会话其他 Cell 有共现时，级联加载相关 Cell
-- [ ] 检索失败零回溯模式：连续无匹配时仅返回热区+查询；连续 3 轮低置信度触发"新话题"标记并强制归档旧 Buffer
-- [ ] 降级策略：Embedding 服务不可用、LLM 超时、sqlite-vec 异常时的安全 fallback
 - **涉及代码**:
-  - `src/session_mem/core/memory_system.py`（linked_prev 追踪、实体共现激活、新话题检测）
-  - `src/session_mem/retrieval/hybrid_search.py`（低置信度 fallback、BM25/RRF 预留）
-  - `src/session_mem/core/buffer.py`（新话题检测时强制切分旧 Buffer）
+  - `src/session_mem/core/memory_system.py`（linked_prev 追踪、实体共现激活）
+  - `src/session_mem/retrieval/hybrid_search.py`（实体共现级联加载）
 - **验收标准**:
   1. 查询涉及跨 Cell 因果时（如"基于预算，刚才的配置还能优化吗？"），系统自动加载 budget 所在的约束 Cell
-  2. 用户突然切换话题且连续 3 轮检索无命中，系统标记新话题，旧 Buffer 内容强制生成 Cell
-  3. Embedding 服务不可用时，系统降级为仅关键词匹配或仅热区模式，不崩溃
-  4. LLM 调用超时（>10s）时，边界检测降级为规则匹配，Cell 生成降级为简单摘要
+  2. 命中 Cell 包含实体"预算"时，系统级联加载同一会话中其他含"预算"实体的 Cell
 
 ### Phase 7: 验证与测试
 - [ ] 基于 LoCoMo 数据集的 session 拼接脚本与测试流水线
