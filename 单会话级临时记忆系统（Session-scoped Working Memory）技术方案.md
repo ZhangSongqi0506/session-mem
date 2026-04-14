@@ -193,14 +193,99 @@ Cell 并非固定轮次生成，而是**语义驱动**：
         
 4.  **关系层**（可选，用于复杂场景）：
     
-    *   因果标记（如当前 Cell 的"折扣"依赖于 Cell\_002 的"预算"）
+    *   因果标记（如当前 Cell 的"折扣"依赖于 Cell\_002 的"预算"）
         
-    *   实体共现（记录与其他 Cell 共享的实体）
+    *   实体共现（记录与其他 Cell 共享的实体）
         
+
+### 3.3 Meta Cell（会话主旨单元）
+
+在普通 Cell 之外，系统引入一个**会话级全局摘要单元**（Meta Cell），用于承载整个会话的**核心目标、有效约束、当前状态与关键决策**。它不参与向量检索竞争，而是**强制常驻于 Working Memory 最前端**，作为所有普通 Cell 的"上级视图"，解决长会话中因 Top-K 检索筛选导致"主旨任务缺失"的问题。
+
+#### 核心设计
+
+*   **每会话唯一**：Meta Cell 与 `session_id` 绑定，一个会话始终只维护 1 个 active 版本。
+*   **全量融合更新**：每生成一个普通 Cell，立即将"当前 Meta Cell 全文 + 新 Cell 原文"送入 LLM，由 LLM 重写输出新的全局摘要。
+*   **无条件注入**：Working Memory 组装时，Meta Cell 固定放在 Prompt 最前端，优先级高于热区原文与检索召回 Cell。
+*   **长度不设硬上限**：接受随会话深度自然膨胀，以全局连贯性的保真为优先。
+
+#### 生命周期
+
+| 阶段 | 触发条件 | 行为 |
+|------|---------|------|
+| **诞生** | 首个普通 Cell（`C_001`）生成完毕 | 以 `C_001` 的原文为唯一输入，调用 LLM 生成初始 Meta Cell |
+| **更新** | 此后每生成一个普通 Cell `C_N` | 输入 = 当前 active Meta Cell 全文 + `C_N` 原文，调用 LLM 全量重写，输出新版 Meta Cell |
+| **归档** | 新版 Meta Cell 写入后 | 旧版状态标记为 `archived`，仅最新版状态为 `active` |
+
+#### 更新 Prompt 核心要求
+
+LLM 在全量融合时需遵循：
+1. **保留有效约束**：核心目标、预算、偏好、时间等仍成立的信息必须保留。
+2. **直接修正覆盖**：若新 Cell 明确推翻旧信息，直接更新为新状态，不保留过时内容。
+3. **融入关键进展**：新 Cell 带来的决策、结论、新约束需被吸收。
+4. **丢弃纯细节**：具体价格、时刻表等局部事实不进入 Meta Cell，留给普通 Cell 承载。
+5. **长度自由**：以准确传达当前全局状态为准，不截断。
+
+#### 数据结构
+
+复用现有 `cells` 表结构，以 `cell_type = 'meta'` 区分，通过 `status` 字段管理版本生命周期：
+
+```sql
+CREATE TABLE meta_cells (
+    session_id TEXT,
+    cell_id TEXT,           -- 固定格式如 META
+    version INTEGER,        -- 从 1 开始递增
+    cell_type TEXT DEFAULT 'meta',
+    status TEXT CHECK(status IN ('active', 'archived')),
+    raw_text TEXT,          -- 实际注入 Prompt 的全局摘要全文
+    token_count INTEGER,
+    linked_cells TEXT,      -- JSON array，记录融合过的普通 Cell ID 列表
+    created_at DATETIME,
+    updated_at DATETIME,
+    PRIMARY KEY (session_id, version)
+);
+```
+
+**查询规则**：`WorkingMemory` 组装时，始终取 `status = 'active'` 且 `version` 最大的那一条。
+
+#### Working Memory 注入位置
+
+Meta Cell 固定置于 Prompt 最前端：
+
+```
+[会话主旨]
+{meta_cell.raw_text}
+
+[近期对话]
+{hot_zone}
+
+[相关历史]
+{retrieved_cells}
+
+[当前查询]
+{query}
+```
+
+Prompt 内具体标签名称（如 `[会话主旨]`、`[全局上下文]` 等）由开发阶段根据实际效果调整，方案中不做死规定。
+
+#### 与现有模块的改动点
+
+| 模块 | 改动 |
+|------|------|
+| `CellGenerator` | 生成普通 Cell 后，追加调用 `MetaCellGenerator.update(new_cell)` |
+| `MetaCellGenerator` | 新增模块，负责首次生成与全量融合更新 |
+| `SQLiteBackend` | 新增 `save_meta_cell()` / `get_active_meta_cell()` 方法 |
+| `WorkingMemory` | `assemble()` 方法首行无条件插入 active Meta Cell |
+
+#### 成本与风险兜底
+
+*   **成本**：20 轮对话若生成 5 个普通 Cell，则 Meta Cell 更新 5 次。每次输入 ≈ 当前 Meta Cell + 新 Cell 原文 + Prompt 开销。总增量成本约为普通 Cell 生成成本的 **0.5–1 倍**。
+*   **幻觉风险**：LLM 更新时可能错误删除有效约束。但由于原始普通 Cell 完整保留，后续检索仍有机会召回原文，形成双重保险。
+*   **长度膨胀**：明确接受该 trade-off，以换取全局连贯性的确定性保障。
 
 ---
 
-## 4. 检索策略：从查询到上下文组装
+## 4. 检索策略：从查询到上下文组装
 
 检索的核心挑战是**短查询与长摘要的语义空间不对齐**（如"多少钱？"与"用户设定预算上限为 1 万元"）。系统采用**查询重写 + 双路召回 + 预算感知的动态加载**三阶段策略。
 
