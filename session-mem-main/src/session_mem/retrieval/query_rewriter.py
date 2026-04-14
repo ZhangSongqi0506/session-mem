@@ -13,9 +13,7 @@ class QueryRewriter:
         """
         若查询过短或含指代词，尝试扩展；否则原样返回。
         """
-        if len(query) >= 10 and not any(
-            w in query for w in ("这", "那", "刚才", "之前")
-        ):
+        if len(query) >= 10 and not any(w in query for w in ("这", "那", "刚才", "之前")):
             return query
 
         if self.llm is None:

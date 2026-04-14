@@ -24,6 +24,10 @@ class MemoryCell:
     # 关系层扩展
     causal_deps: list[str] = field(default_factory=list)  # 依赖的其他 Cell ID
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Meta Cell 扩展
+    status: str | None = None  # active | archived
+    version: int | None = None
+    linked_cells: list[str] = field(default_factory=list)
 
     def to_retrieval_dict(self) -> dict[str, Any]:
         """用于检索层匹配的结构化表示。"""

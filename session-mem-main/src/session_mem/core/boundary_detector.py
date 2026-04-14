@@ -20,9 +20,7 @@ class SemanticBoundaryDetector:
         if not turns:
             return False
 
-        prompt_turns = [
-            {"role": t.role, "content": t.content} for t in turns
-        ]
+        prompt_turns = [{"role": t.role, "content": t.content} for t in turns]
         messages = build_boundary_prompt(prompt_turns)
         response = self.llm.isolated_chat(messages, temperature=0.1)
         return "SPLIT" in response.upper()

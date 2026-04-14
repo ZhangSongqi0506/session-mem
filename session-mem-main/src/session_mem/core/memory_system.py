@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 
 from session_mem.core.buffer import SenMemBuffer, ShortMemBuffer, Turn
 from session_mem.core.cell import MemoryCell

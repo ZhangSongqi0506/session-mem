@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+import sqlite_vec
+
 from session_mem.core.cell import MemoryCell
 from session_mem.storage.base import CellStore, TextStore, VectorIndex
 
@@ -42,9 +44,7 @@ class SQLiteVectorIndex(VectorIndex):
         return [(r[0], float(r[1])) for r in rows]
 
     def remove(self, cell_id: str) -> None:
-        self.conn.execute(
-            "DELETE FROM cell_vectors WHERE cell_id = ?", (cell_id,)
-        )
+        self.conn.execute("DELETE FROM cell_vectors WHERE cell_id = ?", (cell_id,))
         self.conn.commit()
 
     def clear(self) -> None:
@@ -60,8 +60,7 @@ class SQLiteCellStore(CellStore):
         self._ensure_tables()
 
     def _ensure_tables(self) -> None:
-        self.conn.execute(
-            """
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS cells (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -76,26 +75,17 @@ class SQLiteCellStore(CellStore):
                 vector_id TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_cells_session ON cells(session_id)"
-        )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_cells_type ON cells(cell_type)"
-        )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_cells_linked_prev ON cells(linked_prev)"
-        )
-        self.conn.execute(
-            """
+            """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_cells_session ON cells(session_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_cells_type ON cells(cell_type)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_cells_linked_prev ON cells(linked_prev)")
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS entity_links (
                 cell_id TEXT,
                 entity TEXT,
                 FOREIGN KEY (cell_id) REFERENCES cells(id)
             )
-            """
-        )
+            """)
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_entity_links_entity ON entity_links(entity)"
         )
@@ -133,16 +123,12 @@ class SQLiteCellStore(CellStore):
         self.conn.commit()
 
     def get(self, cell_id: str) -> MemoryCell | None:
-        row = self.conn.execute(
-            "SELECT * FROM cells WHERE id = ?", (cell_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM cells WHERE id = ?", (cell_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_cell(row)
 
-    def list_by_session(
-        self, session_id: str, limit: int | None = None
-    ) -> list[MemoryCell]:
+    def list_by_session(self, session_id: str, limit: int | None = None) -> list[MemoryCell]:
         sql = "SELECT * FROM cells WHERE session_id = ? ORDER BY created_at"
         params: list[Any] = [session_id]
         if limit is not None:
@@ -171,6 +157,9 @@ class SQLiteCellStore(CellStore):
         ]
         for cid in cell_ids:
             self.conn.execute("DELETE FROM entity_links WHERE cell_id = ?", (cid,))
+            self.conn.execute("DELETE FROM cell_texts WHERE cell_id = ?", (cid,))
+            self.conn.execute("DELETE FROM cell_vectors WHERE cell_id = ?", (cid,))
+        self.conn.execute("DELETE FROM meta_cells WHERE session_id = ?", (session_id,))
         self.conn.execute("DELETE FROM cells WHERE session_id = ?", (session_id,))
         self.conn.commit()
 
@@ -198,16 +187,14 @@ class SQLiteTextStore(TextStore):
         self._ensure_table()
 
     def _ensure_table(self) -> None:
-        self.conn.execute(
-            """
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS cell_texts (
                 cell_id TEXT PRIMARY KEY,
                 raw_text TEXT,
                 token_count INTEGER,
                 FOREIGN KEY (cell_id) REFERENCES cells(id)
             )
-            """
-        )
+            """)
         self.conn.commit()
 
     def save(self, cell_id: str, raw_text: str, token_count: int) -> None:
@@ -230,13 +217,100 @@ class SQLiteTextStore(TextStore):
 
 class SQLiteBackend:
     """
-    统一 SQLite 后端，一个 db 文件包含 VectorIndex + CellStore + TextStore。
+    统一 SQLite 后端，一个 db 文件包含 VectorIndex + CellStore + TextStore + MetaCellStore。
     """
 
     def __init__(self, db_path: str | Path, vector_dims: int = 1024):
         self.db_path = Path(db_path)
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # 加载 sqlite-vec 扩展并启用外键约束
+        self.conn.enable_load_extension(True)
+        sqlite_vec.load(self.conn)
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.vector_index = SQLiteVectorIndex(self.conn, dims=vector_dims)
         self.cell_store = SQLiteCellStore(self.conn)
         self.text_store = SQLiteTextStore(self.conn)
+        self._ensure_meta_tables()
+
+    def _ensure_meta_tables(self) -> None:
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS meta_cells (
+                session_id TEXT NOT NULL,
+                cell_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                cell_type TEXT DEFAULT 'meta',
+                status TEXT CHECK(status IN ('active', 'archived')),
+                raw_text TEXT,
+                token_count INTEGER DEFAULT 0,
+                linked_cells TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (session_id, version)
+            )
+            """)
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_meta_cells_session ON meta_cells(session_id)"
+        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_cells_status ON meta_cells(status)")
+        self.conn.commit()
+
+    def save_meta_cell(self, cell: MemoryCell) -> None:
+        """保存或更新 Meta Cell；将同一 session 的旧版本标记为 archived。"""
+        self.conn.execute(
+            "UPDATE meta_cells SET status = 'archived' WHERE session_id = ? AND status = 'active'",
+            (cell.session_id,),
+        )
+        self.conn.execute(
+            """
+            INSERT INTO meta_cells (
+                session_id, cell_id, version, cell_type, status,
+                raw_text, token_count, linked_cells, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                cell.session_id,
+                cell.id,
+                cell.version or 1,
+                cell.cell_type or "meta",
+                cell.status or "active",
+                cell.raw_text,
+                cell.token_count,
+                json.dumps(cell.linked_cells, ensure_ascii=False),
+            ),
+        )
+        self.conn.commit()
+
+    def get_active_meta_cell(self, session_id: str) -> MemoryCell | None:
+        """获取指定会话当前 active 的 Meta Cell。"""
+        row = self.conn.execute(
+            """
+            SELECT * FROM meta_cells
+            WHERE session_id = ? AND status = 'active'
+            ORDER BY version DESC LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return MemoryCell(
+            id=row["cell_id"],
+            session_id=row["session_id"],
+            cell_type=row["cell_type"],
+            confidence=1.0,
+            summary=row["raw_text"] or "",
+            raw_text=row["raw_text"] or "",
+            token_count=row["token_count"] or 0,
+            status=row["status"],
+            version=row["version"],
+            linked_cells=json.loads(row["linked_cells"] or "[]"),
+        )
+
+    def delete_meta_cells_by_session(self, session_id: str) -> None:
+        """删除指定会话的全部 Meta Cell。"""
+        self.conn.execute("DELETE FROM meta_cells WHERE session_id = ?", (session_id,))
+        self.conn.commit()
+
+    def close(self) -> None:
+        """关闭数据库连接。"""
+        self.conn.close()

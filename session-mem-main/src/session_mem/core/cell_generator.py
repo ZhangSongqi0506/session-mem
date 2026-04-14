@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
 from session_mem.core.buffer import Turn
 from session_mem.core.cell import MemoryCell

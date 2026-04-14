@@ -43,9 +43,9 @@ Phase 2
 
 ### Phase 2: 存储层完善与数据库构建
 - [x] 修正向量维度不一致问题：`sqlite_backend.py` 与 `AGENTS.md` 统一为 **1024 维**（适配 bge-large-en-v1.5）
-- [ ] 完善 SQLite schema：确保 `cell_type` 枚举包含 `fragmented`，补充 `cells` 表缺失字段与外键约束
-- [ ] 实现存储层单元测试：CRUD、会话隔离、实体共现查询、向量增删查
-- [ ] 解决 sqlite-vec 依赖与多线程使用注意事项
+- [x] 完善 SQLite schema：确保 `cell_type` 枚举包含 `fragmented`，补充 `cells` 表缺失字段与外键约束；新增 `meta_cells` 表与相关存储方法
+- [x] 实现存储层单元测试：CRUD、会话隔离、实体共现查询、向量增删查
+- [x] 解决 sqlite-vec 依赖与多线程使用注意事项（`enable_load_extension(True)` + `check_same_thread=False`）
 - **涉及代码**:
   - `src/session_mem/storage/sqlite_backend.py`（核心：schema 修正、vector dims 改为 1024、新增 `meta_cells` 表）
   - `src/session_mem/storage/base.py`（如有需要补充接口方法）
@@ -63,7 +63,7 @@ Phase 2
   2. 单元测试覆盖：Cell 保存后 `get` / `list_by_session` / `find_by_entity` 结果正确
   3. 向量写入后 `search` 能返回近似的 `cell_id` 列表
   4. `delete_session` 能级联清理一个会话的全部数据（元数据、原文、实体关系、向量、meta_cells）
-- **Status:** in_progress
+- **Status:** complete
 
 ### Phase 3: SenMemBuffer 实现与语义边界检测
 - [ ] 完善 `SenMemBuffer`：Token 估算（使用 tiktoken 或字符 fallback）、512 整数倍检测阈值、2048 硬上限切分

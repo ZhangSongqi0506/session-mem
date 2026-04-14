@@ -17,9 +17,7 @@ class QwenClient(LLMClient):
         base_url: str | None = None,
         model: str = "qwen2.5:72b-instruct-nq",
     ):
-        self.api_key = api_key or os.getenv(
-            "SESSION_MEM_API_LLM_API_KEY", "not-needed"
-        )
+        self.api_key = api_key or os.getenv("SESSION_MEM_API_LLM_API_KEY", "not-needed")
         self.base_url = base_url or os.getenv(
             "SESSION_MEM_API_LLM_BASE_URL", "http://172.10.10.200/v1"
         )

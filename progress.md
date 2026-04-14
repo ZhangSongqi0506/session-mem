@@ -5,6 +5,24 @@
 
 ## Session: 2026-04-14
 
+### Phase 2: 存储层完善与数据库构建
+- **Status:** complete
+- **Actions taken:**
+  - 使用 uv 创建 Python 3.11 虚拟环境并安装依赖（含 `sqlite-vec`）
+  - 扩展 `MemoryCell`，新增 `status`、`version`、`linked_cells` 字段以支持 Meta Cell
+  - 完善 `SQLiteBackend`：加载 `sqlite-vec` 扩展、启用外键约束（`PRAGMA foreign_keys = ON`）
+  - 新增 `meta_cells` 表及存储方法：`save_meta_cell()`、`get_active_meta_cell()`、`delete_meta_cells_by_session()`
+  - 修复 `delete_session()` 级联清理逻辑，确保 `cell_texts`、`cell_vectors`、`entity_links`、`meta_cells` 一并删除
+  - 创建 `tests/test_storage.py`，覆盖 CRUD、会话隔离、实体共现查询、向量增删查、级联删除、Meta Cell 生命周期、`fragmented` cell_type
+  - 运行 `uv run pytest tests/test_storage.py -v`，8 个测试全部通过
+  - 运行 `uv run black src/ tests/` 与 `uv run ruff check src/ tests/ --fix` 完成代码格式化与 lint 修复
+- **Files created/modified:**
+  - `src/session_mem/core/cell.py`（扩展 MemoryCell 字段）
+  - `src/session_mem/storage/sqlite_backend.py`（Meta Cell 表、级联删除、sqlite-vec 加载、外键启用）
+  - `tests/test_storage.py`（新建，8 个单元测试）
+  - `src/session_mem/core/memory_system.py`（ruff 自动修复未使用导入）
+  - `src/session_mem/storage/base.py`（ruff 自动修复未使用导入）
+
 ### 文档与规划更新 + 代码热修复
 - **Status:** complete
 - **Actions taken:**
