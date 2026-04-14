@@ -8,7 +8,7 @@
 实现 `session-mem` 单会话级临时记忆系统的 MVP，包含三层缓冲架构、Cell 生成与检索、时间戳解析、SQLite + sqlite-vec 存储，并通过 LoCoMo 拼接会话完成基准验证。
 
 ## Current Phase
-Phase 4
+Phase 4.1
 
 ## Phases
 
@@ -107,6 +107,33 @@ Phase 4
   4. LLM 返回非法 JSON 时，`parser.py` 的 fallback 能提取出有效字段，不抛异常导致流程中断
   5. 生成首个普通 Cell 后，`MetaCellGenerator` 能产出初始 Meta Cell 并存入 `meta_cells` 表
   6. 生成第二个普通 Cell 后，Meta Cell 被更新为新版本，旧版本标记 `archived`，新版本标记 `active`
+
+### Phase 4.1: 多切分点语义边界检测落地
+- [ ] 重构 `SemanticBoundaryDetector`：从 `should_split()` 返回 `bool` 改为返回**切分点索引列表**（如 `[3, 6]`）
+- [ ] 更新边界检测 Prompt：要求 LLM 分析当前 Buffer 全部轮次，输出 JSON 格式的切分点索引列表及理由
+- [ ] 更新 `MemorySystem.add_turn()` 软限分支：支持接收多个切分点，依次生成 N 个 Cell，最后一段保留在 Buffer
+- [ ] 更新 `SenMemBuffer.extract_for_cell()` 或新增批量提取方法：按多个切分点连续切分 Buffer
+- [ ] 更新 `llm/parser.py`：增强 JSON fallback，支持解析切分点列表格式
+- [ ] 更新 `tests/test_boundary_detector.py`：补充多边界场景测试
+- [ ] 更新 `tests/test_memory_system.py`：补充一次检测生成多个 Cell 的集成测试
+- [ ] 更新 `tests/test_buffer.py`：补充多切分点提取后 Buffer 状态验证
+- **涉及代码**:
+  - `src/session_mem/core/boundary_detector.py`（核心：返回类型改为 `list[int]`）
+  - `src/session_mem/llm/prompts.py`（新增/修改边界检测 Prompt，要求输出切分点列表）
+  - `src/session_mem/llm/parser.py`（JSON 解析增强）
+  - `src/session_mem/core/buffer.py`（`SenMemBuffer` 支持多段提取）
+  - `src/session_mem/core/memory_system.py`（软限分支支持循环生成多个 Cell）
+  - `tests/test_boundary_detector.py`（新增测试用例）
+  - `tests/test_memory_system.py`（新增集成测试）
+  - `tests/test_buffer.py`（新增 Buffer 提取测试）
+- **验收标准**:
+  1. `SemanticBoundaryDetector.should_split(turns)` 返回 `list[int]`，无边界时返回 `[]`
+  2. 给定 10 轮含 3 个主题的对话，LLM 能正确返回 2 个切分点索引
+  3. `MemorySystem.add_turn()` 在检测到 2 个切分点时，依次生成 2 个 Cell，且最后一段（新主题）保留在 Buffer
+  4. 生成的多个 Cell 均正确写入 SQLite，且 `linked_prev` 链连续
+  5. 多 Cell 生成后，Meta Cell 更新仅触发 **1 次**（基于最新生成的 Cell 做增量融合，而非每个 Cell 都更新）
+  6. 全部单元测试通过；black + ruff 通过
+- **Status:** in_progress
 
 ### Phase 5: 检索策略与 Working Memory
 - [ ] 实现 `QueryRewriter`：基于热区上下文的指代消解、短查询扩展（<10 tokens 触发）
