@@ -1,19 +1,49 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from session_mem.llm.base import LLMClient
 
 
 class QueryRewriter:
-    """查询重写：指代消解 + 伪文档扩展。"""
+    """查询重写：指代消解 + 短查询扩展。"""
 
-    def __init__(self, llm_client: LLMClient | None = None):
+    def __init__(
+        self,
+        llm_client: LLMClient | None = None,
+        token_estimator: Callable[[str], int] | None = None,
+    ):
         self.llm = llm_client
+        self.token_estimator = token_estimator
 
     def rewrite(self, query: str, hot_zone: list[str]) -> str:
         """
-        若查询过短或含指代词，尝试扩展；否则原样返回。
+        若查询过短（<10 tokens）或含指代词，尝试扩展；否则原样返回。
         """
-        if len(query) >= 10 and not any(w in query for w in ("这", "那", "刚才", "之前")):
+        threshold = 10
+        tokens = self.token_estimator(query) if self.token_estimator else len(query)
+
+        pronouns = (
+            "这",
+            "那",
+            "刚才",
+            "之前",
+            "它",
+            "他",
+            "她",
+            "这个",
+            "那个",
+            "this",
+            "that",
+            "it",
+            "he",
+            "she",
+            "they",
+            "them",
+            "these",
+            "those",
+        )
+        if tokens >= threshold and not any(w in query.lower() for w in pronouns):
             return query
 
         if self.llm is None:

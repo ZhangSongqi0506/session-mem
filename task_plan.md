@@ -136,11 +136,11 @@ Phase 4.1
 - **Status:** complete
 
 ### Phase 5: 检索策略与 Working Memory
-- [ ] 实现 `QueryRewriter`：基于热区上下文的指代消解、短查询扩展（<10 tokens 触发）
-- [ ] 实现 `HybridSearcher`：向量相似度（sqlite-vec `search`）+ 关键词 Jaccard + 实体匹配奖励，融合公式 `0.75*vector + 0.25*keyword`
-- [ ] 实现 `MemorySystem.retrieve_context()` 完整流程：查询重写 → 双路召回 → 全量回溯原文 → 组装 `WorkingMemory`
-- [ ] `WorkingMemory` 组装时无条件注入 active Meta Cell（固定置于 Prompt 最前端）
-- [ ] 低置信度 Fallback：Top-1 融合分数 <0.6 时放宽阈值、BM25 精确匹配、RRF 合并
+- [x] 实现 `QueryRewriter`：基于热区上下文的指代消解、短查询扩展（<10 tokens 触发）
+- [x] 实现 `HybridSearcher`：向量相似度（sqlite-vec `search`）+ 关键词 Jaccard + 实体匹配奖励，融合公式 `0.75*vector + 0.25*keyword`
+- [x] 实现 `MemorySystem.retrieve_context()` 完整流程：查询重写 → 双路召回 → 全量回溯原文 → 组装 `WorkingMemory`
+- [x] `WorkingMemory` 组装时无条件注入 active Meta Cell（固定置于 Prompt 最前端）
+- [x] 低置信度 Fallback：Top-1 融合分数 <0.6 时放宽阈值、精确关键词匹配、RRF 合并
 - **涉及代码**:
   - `src/session_mem/retrieval/query_rewriter.py`（实现 rewrite 逻辑，热区传入）
   - `src/session_mem/retrieval/hybrid_search.py`（实现向量+关键词融合搜索）

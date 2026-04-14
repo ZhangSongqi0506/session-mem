@@ -13,6 +13,7 @@ from session_mem.core.meta_cell_generator import MetaCellGenerator
 from session_mem.core.working_memory import WorkingMemory
 from session_mem.llm.base import LLMClient
 from session_mem.retrieval.hybrid_search import HybridSearcher
+from session_mem.retrieval.query_rewriter import QueryRewriter
 from session_mem.storage.base import CellStore, TextStore, VectorIndex
 from session_mem.utils.tokenizer import TokenEstimator
 
@@ -33,6 +34,7 @@ class MemorySystem:
         cell_store: CellStore,
         text_store: TextStore,
         hybrid_searcher: HybridSearcher | None = None,
+        query_rewriter: QueryRewriter | None = None,
         meta_cell_store: Any = None,
         embedding_client: LLMClient | None = None,
     ):
@@ -41,12 +43,23 @@ class MemorySystem:
         self.vector_index = vector_index
         self.cell_store = cell_store
         self.text_store = text_store
-        self.hybrid = hybrid_searcher
         self.meta_cell_store = meta_cell_store
         self.embedding_client = embedding_client
 
+        self.hybrid = hybrid_searcher or HybridSearcher(
+            vector_index=vector_index,
+            cell_store=cell_store,
+            session_id=session_id,
+            embedding_client=embedding_client,
+        )
+        token_estimator = TokenEstimator().estimate
+        self.query_rewriter = query_rewriter or QueryRewriter(
+            llm_client=llm_client,
+            token_estimator=token_estimator,
+        )
+
         self.sen_buffer = SenMemBuffer(session_id=session_id)
-        self.sen_buffer.set_token_estimator(TokenEstimator().estimate)
+        self.sen_buffer.set_token_estimator(token_estimator)
         self.short_buffer = ShortMemBuffer(session_id=session_id, cell_store=cell_store)
         self.cell_generator = CellGenerator(self.llm)
         self.boundary_detector = SemanticBoundaryDetector(self.llm)
@@ -97,12 +110,15 @@ class MemorySystem:
         # 1. 构建热区
         hot_zone = self._build_hot_zone(hot_zone_turns)
 
-        # 2. 双路召回
+        # 2. 查询重写
+        rewritten_query = self.query_rewriter.rewrite(query, hot_zone)
+
+        # 3. 双路召回
         candidate_ids: list[str] = []
         if self.hybrid:
-            candidate_ids = self.hybrid.search(query, top_k=top_k)
+            candidate_ids = self.hybrid.search(rewritten_query, top_k=top_k)
 
-        # 3. 全量回溯原文
+        # 4. 全量回溯原文
         activated: list[MemoryCell] = []
         for cid in candidate_ids[:top_k]:
             cell = self.cell_store.get(cid)
@@ -110,18 +126,18 @@ class MemorySystem:
                 cell.raw_text = self.text_store.load(cid)
                 activated.append(cell)
 
-        # 4. 获取 active Meta Cell
+        # 5. 获取 active Meta Cell
         meta_cell: MemoryCell | None = None
         if self.meta_cell_store is not None:
             meta_cell = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
                 self.session_id
             )
 
-        # 5. 组装
+        # 6. 组装
         wm = WorkingMemory(
             hot_zone=hot_zone,
             activated_cells=activated,
-            query=query,
+            query=rewritten_query,
             meta_cell=meta_cell,
         )
         return wm

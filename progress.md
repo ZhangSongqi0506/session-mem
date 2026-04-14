@@ -5,6 +5,22 @@
 
 ## Session: 2026-04-14
 
+### Phase 5: 检索策略与 Working Memory
+- **Status:** complete
+- **Actions taken:**
+  1. 完善 `QueryRewriter`：引入 `token_estimator` 参数，短查询触发阈值从字符长度改为 <10 tokens；扩充中英文指代词库
+  2. 实现 `HybridSearcher` 双路召回：向量检索（sqlite-vec）+ 关键词 Jaccard + 实体匹配奖励，融合公式 `0.75*vector + 0.25*keyword`
+  3. `HybridSearcher` 新增低置信度 fallback：Top-1 融合分数 <0.6 时，扩大向量检索范围并执行全量精确关键词扫描，RRF 合并结果
+  4. `MemorySystem` 自动构造 `HybridSearcher` 与 `QueryRewriter`，`retrieve_context()` 完成"查询重写 → 双路召回 → 全量回溯 → 组装 WorkingMemory"完整链路
+  5. `WorkingMemory.to_prompt()` 已确保 Meta Cell 无条件前置
+  6. 新建 `tests/test_retrieval.py`，覆盖 QueryRewriter、HybridSearcher（含 fallback、实体奖励）及 MemorySystem 检索集成，共 10 个测试
+  7. 全部 64 个测试通过；black + ruff 通过
+- **Files created/modified:**
+  - `src/session_mem/retrieval/query_rewriter.py`
+  - `src/session_mem/retrieval/hybrid_search.py`
+  - `src/session_mem/core/memory_system.py`
+  - `tests/test_retrieval.py`（新建）
+
 ### Phase 4.1: 多切分点语义边界检测落地
 - **Status:** complete
 - **Actions taken:**
