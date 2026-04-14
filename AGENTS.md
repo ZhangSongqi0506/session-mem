@@ -56,7 +56,8 @@ C:\zsq\单会话项目\session-mem-main/
 │   │   ├── cell_generator.py
 │   │   ├── boundary_detector.py
 │   │   ├── memory_system.py
-│   │   └── working_memory.py
+│   │   ├── working_memory.py
+│   │   └── meta_cell_generator.py
 │   ├── llm/                    # LLM 客户端、Prompt、解析器
 │   │   ├── __init__.py
 │   │   ├── base.py

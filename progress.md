@@ -19,6 +19,20 @@
   - `progress.md`（更新）
   - `src/session_mem/storage/sqlite_backend.py`（热修复：dims 默认 512 → 1024）
 
+### Meta Cell 架构同步
+- **Actions taken:**
+  - 技术方案新增 Meta Cell（会话主旨单元）设计，同步更新 `AGENTS.md`、`task_plan.md`、`findings.md`
+  - `task_plan.md`：Phase 2 新增 `meta_cells` 表；Phase 4 新增 `MetaCellGenerator` 实现与存储接口；Phase 5 要求 WorkingMemory 无条件前置 active Meta Cell
+  - `findings.md`：新增 Meta Cell 技术决策、数据库 Schema（`meta_cells`）、接口契约（`MetaCellGenerator`）、待实现占位项
+  - 更新 `README.md` 核心特性与项目结构，补充 Meta Cell 说明
+  - 创建 `src/session_mem/core/meta_cell_generator.py` 占位模块
+- **Files created/modified:**
+  - `AGENTS.md`（更新：项目结构加入 `meta_cell_generator.py`）
+  - `task_plan.md`（更新）
+  - `findings.md`（更新）
+  - `README.md`（更新）
+  - `src/session_mem/core/meta_cell_generator.py`（新建）
+
 ---
 
 ## Session: 2026-04-13

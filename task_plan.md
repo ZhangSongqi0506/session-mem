@@ -47,7 +47,7 @@ Phase 2
 - [ ] 实现存储层单元测试：CRUD、会话隔离、实体共现查询、向量增删查
 - [ ] 解决 sqlite-vec 依赖与多线程使用注意事项
 - **涉及代码**:
-  - `src/session_mem/storage/sqlite_backend.py`（核心：schema 修正、vector dims 改为 1024）
+  - `src/session_mem/storage/sqlite_backend.py`（核心：schema 修正、vector dims 改为 1024、新增 `meta_cells` 表）
   - `src/session_mem/storage/base.py`（如有需要补充接口方法）
   - `src/session_mem/core/cell.py`（确认 `cell_type` 支持 `fragmented`）
   - `tests/test_storage.py`（新建）
@@ -56,12 +56,13 @@ Phase 2
   2. `cell_texts` 表：`cell_id` (PK), `raw_text`, `token_count`，外键关联 `cells(id)`
   3. `entity_links` 表：`cell_id`, `entity`，索引 `idx_entity_links_entity`
   4. `cell_vectors` 虚拟表：`cell_id` (PK), `embedding FLOAT[1024]`
-  5. 所有表均需支持按 `session_id` 过滤，保证单会话隔离
+  5. `meta_cells` 表：`session_id`, `cell_id`, `version`, `cell_type`='meta', `status` (active/archived), `raw_text`, `token_count`, `linked_cells` (JSON), `created_at`, `updated_at`，主键 `(session_id, version)`，索引 `session_id` 和 `status`
+  6. 所有表均需支持按 `session_id` 过滤，保证单会话隔离
 - **验收标准**:
-  1. `SQLiteBackend` 初始化后 schema 正确，vector dims = 1024
+  1. `SQLiteBackend` 初始化后 schema 正确，vector dims = 1024，共 5 张表
   2. 单元测试覆盖：Cell 保存后 `get` / `list_by_session` / `find_by_entity` 结果正确
   3. 向量写入后 `search` 能返回近似的 `cell_id` 列表
-  4. `delete_session` 能级联清理一个会话的全部数据（元数据、原文、实体关系、向量）
+  4. `delete_session` 能级联清理一个会话的全部数据（元数据、原文、实体关系、向量、meta_cells）
 - **Status:** in_progress
 
 ### Phase 3: SenMemBuffer 实现与语义边界检测
@@ -83,38 +84,46 @@ Phase 2
   4. `MemorySystem.add_turn()` 在检测到边界时，能正确调用 `CellGenerator` 生成 Cell 并清空已切分轮次
   5. 达到 2048 tokens 仍未切分时，强制提取全部内容生成 Cell 并标记 `fragmented`
 
-### Phase 4: Cell 生成与 ShortMemBuffer
+### Phase 4: Cell 生成、Meta Cell 与 ShortMemBuffer
 - [ ] 完善 `CellGenerator`：集成 LLM Prompt 调用、JSON 解析 fallback、四层信息填充
 - [ ] 集成 Embedding 服务：通过 Xinference/OpenAI 兼容接口获取 1024 维向量，写入 `SQLiteVectorIndex`
 - [ ] `ShortMemBuffer` 与存储层联动：从 `CellStore` 加载当前会话全部 Cell，而非仅内存列表
 - [ ] 实现 `MemorySystem` 中 Cell 生成的完整闭环（生成 → 存元数据 → 存原文 → 存向量 → 加入 ShortMemBuffer）
+- [ ] 实现 `MetaCellGenerator`：首个普通 Cell 生成后创建初始 Meta Cell；后续每生成一个普通 Cell，调用 LLM 全量融合重写 Meta Cell
+- [ ] `SQLiteBackend` 新增 `save_meta_cell()` / `get_active_meta_cell()` / `delete_meta_cells_by_session()`
 - **涉及代码**:
   - `src/session_mem/core/cell_generator.py`（完善 `generate`，处理 LLM 失败 fallback）
+  - `src/session_mem/core/meta_cell_generator.py`（新建：初始生成 + 全量融合更新）
   - `src/session_mem/core/buffer.py`（`ShortMemBuffer` 改为查询 SQLite）
-  - `src/session_mem/core/memory_system.py`（Cell 生成闭环、`_next_cell_id` 持久化）
-  - `src/session_mem/llm/prompts.py`（Cell 生成 prompt 调优）
+  - `src/session_mem/core/memory_system.py`（Cell 生成闭环、Meta Cell 触发逻辑）
+  - `src/session_mem/llm/prompts.py`（Cell 生成 prompt + Meta Cell 生成/更新 prompt）
   - `src/session_mem/llm/parser.py`（JSON 解析 fallback 增强）
+  - `src/session_mem/storage/sqlite_backend.py`（Meta Cell 存储方法）
 - **验收标准**:
   1. 给定 3-5 轮对话，`CellGenerator.generate()` 输出合法 `MemoryCell`，`summary` 非空，`keywords` 长度 5-8
   2. Cell 生成后，元数据、原文、向量分别写入对应 SQLite 表，且可通过 `cell_id` 读出
   3. `ShortMemBuffer.all_cells()` 返回当前会话已生成的全部 Cell（从 DB 读取）
   4. LLM 返回非法 JSON 时，`parser.py` 的 fallback 能提取出有效字段，不抛异常导致流程中断
+  5. 生成首个普通 Cell 后，`MetaCellGenerator` 能产出初始 Meta Cell 并存入 `meta_cells` 表
+  6. 生成第二个普通 Cell 后，Meta Cell 被更新为新版本，旧版本标记 `archived`，新版本标记 `active`
 
 ### Phase 5: 检索策略与 Working Memory
 - [ ] 实现 `QueryRewriter`：基于热区上下文的指代消解、短查询扩展（<10 tokens 触发）
 - [ ] 实现 `HybridSearcher`：向量相似度（sqlite-vec `search`）+ 关键词 Jaccard + 实体匹配奖励，融合公式 `0.75*vector + 0.25*keyword`
 - [ ] 实现 `MemorySystem.retrieve_context()` 完整流程：查询重写 → 双路召回 → 全量回溯原文 → 组装 `WorkingMemory`
+- [ ] `WorkingMemory` 组装时无条件注入 active Meta Cell（固定置于 Prompt 最前端）
 - [ ] 低置信度 Fallback：Top-1 融合分数 <0.6 时放宽阈值、BM25 精确匹配、RRF 合并
 - **涉及代码**:
   - `src/session_mem/retrieval/query_rewriter.py`（实现 rewrite 逻辑，热区传入）
   - `src/session_mem/retrieval/hybrid_search.py`（实现向量+关键词融合搜索）
-  - `src/session_mem/core/working_memory.py`（如有需要调整 Prompt 组装格式）
-  - `src/session_mem/core/memory_system.py`（`retrieve_context` 完整流程）
+  - `src/session_mem/core/working_memory.py`（调整 Prompt 组装格式，支持 Meta Cell 前置）
+  - `src/session_mem/core/memory_system.py`（`retrieve_context` 完整流程 + Meta Cell 获取）
+  - `src/session_mem/storage/sqlite_backend.py`（`get_active_meta_cell` 调用）
 - **验收标准**:
   1. 查询"这个多少钱？"在热区含"预算"时能重写成"预算多少钱？"或类似明确查询
   2. `HybridSearcher.search(query, top_k=2)` 返回的 Cell ID 与查询语义相关
-  3. 检索命中后，`WorkingMemory` 中包含热区原文 + 命中 Cell 的完整原文 + 当前查询
-  4. 对于无关查询（如历史是编程，查询是"今天天气"），`HybridSearcher` 返回空或低分，`WorkingMemory` 仅含热区+查询
+  3. 检索命中后，`WorkingMemory` 中包含 **Meta Cell 全文** + 热区原文 + 命中 Cell 的完整原文 + 当前查询
+  4. 对于无关查询（如历史是编程，查询是"今天天气"），`HybridSearcher` 返回空或低分，`WorkingMemory` 仍含 Meta Cell + 热区+查询
   5. 完整检索链路端到端延迟 < 200ms（不含 LLM 重写时 < 50ms）
 
 ### Phase 6: 边界情况与异常处理
@@ -148,7 +157,7 @@ Phase 2
 - **验收标准**:
   1. 单元测试覆盖率 > 60%（核心模块 buffer、cell_generator、retrieval、storage）
   2. LoCoMo 评估脚本可跑通至少 50 条拼接会话，输出 Token 节省率与准确率
-  3. **Token 节省率 >= 40%**（目标 40-60%）
+  3. **Token 节省率 >= 40%**（目标 50-60%，含 Meta Cell 后约为 1900 tokens vs 4000+ tokens 全量历史）
   4. **回答准确率损失 < 5%**（对比全量历史基线）
   5. README 包含快速开始、环境配置、LoCoMo 复现命令
 

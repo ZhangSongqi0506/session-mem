@@ -13,12 +13,13 @@
 - 低成本、低延迟（TTFT < 50ms）
 
 ## Research Findings
-- 技术方案采用「三层缓冲 + 语义驱动 Cell」架构
+- 技术方案采用「三层缓冲 + 语义驱动 Cell + Meta Cell」架构
   - SenMemBuffer：零压缩原始文本，512-2048 tokens 弹性窗口
   - ShortMemBuffer：Cell 摘要索引库，MVP 阶段全量 Cell 参与检索（不区分活跃/存储窗口）
-  - Working Memory：仅携带热区原文 + 命中 Cell 全文
+  - Meta Cell：会话级全局摘要单元，强制常驻于 Working Memory 最前端，解决长会话主旨任务缺失问题
+  - Working Memory：Meta Cell 全文 + 热区原文 + 命中 Cell 全文
 - 时间戳解析用于支持跨长时间会话的时序定位（30 分钟间隔作为切分信号）
-- 文档版本 v2.0 已通过预检审查，补充了验证方法、时间戳机制和存储与持久化设计（第 5 章）
+- 文档版本 v2.0 已通过预检审查，补充了验证方法、时间戳机制、存储与持久化设计（第 5 章）及 Meta Cell 设计（第 3.3 节）
 - **向量维度修正**：早期技术方案草稿写为 512 维，但实际采用 `bge-large-en-v1.5` 输出为 1024 维，`sqlite_backend.py` 默认值需要同步修正，否则会导致向量写入/检索维度不匹配
 
 ## Technical Decisions
@@ -35,6 +36,7 @@
 | uv 作为包管理工具 | 极速依赖解析，统一替代 pip+venv+pip-tools，与 pyproject.toml 原生兼容 |
 | 向量维度 1024 | 与 bge-large-en-v1.5 输出维度严格一致，消除维度不一致导致的运行时错误 |
 | ShortMemBuffer MVP 阶段不区分窗口 | 保证召回完整性，简化实现；未来会话 Cell >100 时再引入分级策略 |
+| Meta Cell（会话主旨单元）| 以少量额外 Token（约 400）换取全局主旨的确定性不丢，作为普通 Cell 检索的双保险 |
 
 ## Architecture Notes
 ### 数据库 Schema 设计（SQLiteBackend）
@@ -42,12 +44,14 @@
 - `cell_texts`：原文回溯，独立表便于未来按时间清理
 - `entity_links`：实体共现反查表，支持快速加载同实体关联 Cell
 - `cell_vectors`：sqlite-vec 虚拟表，主键 `cell_id`，向量维度 **1024**
+- `meta_cells`：会话级 Meta Cell 存储，主键 `(session_id, version)`，含 `status`（active/archived）、`raw_text`、`token_count`、`linked_cells`（JSON）
 
 ### 关键接口契约
 - `MemorySystem.add_turn(role, content, timestamp)`：写入新轮次，内部触发语义边界检测与 Cell 生成
-- `MemorySystem.retrieve_context(query)`：返回 `WorkingMemory`，含热区 + 激活 Cell 全文 + 查询
+- `MemorySystem.retrieve_context(query)`：返回 `WorkingMemory`，含 Meta Cell 全文 + 热区 + 激活 Cell 全文 + 查询
 - `SemanticBoundaryDetector.should_split(turns)`：独立新会话调用，返回布尔值
 - `CellGenerator.generate(turns, session_id, cell_id)`：返回填充完整的 `MemoryCell`
+- `MetaCellGenerator.generate(session_id, cells, previous_meta=None)`：生成或全量重写会话级 Meta Cell，返回 `MemoryCell`（`cell_type='meta'`）
 
 ## Issues Encountered
 | Issue | Resolution |
@@ -57,6 +61,7 @@
 | 向量维度 512 vs 1024 不一致 | 技术方案 v2.0 和 AGENTS.md 已统一为 1024；`sqlite_backend.py` 将在 Phase 2 修正 |
 | `SenMemBuffer.gap_detected()` 尚未实现 ISO 8601 解析 | 当前返回 False 占位，需在 Phase 3 补充 datetime 解析逻辑 |
 | `HybridSearcher.search()` 尚未实现 | 当前返回空列表占位，需在 Phase 5 补充向量+关键词融合逻辑 |
+| `MetaCellGenerator` 尚未实现 | 已创建 `meta_cell_generator.py` 占位模块，需在 Phase 4 补充 LLM 融合逻辑 |
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem
