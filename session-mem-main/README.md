@@ -7,7 +7,7 @@
 ## 核心特性
 
 - **三层缓冲架构**：SenMemBuffer（零压缩保真）→ ShortMemBuffer（摘要索引）→ Working Memory（按需组装）
-- **语义驱动 Cell**：基于话题转折自动切分，生成结构化记忆单元
+- **语义驱动 Cell**：基于话题转折自动切分，生成结构化记忆单元；支持一次检测产出多个 Cell
 - **会话主旨单元（Meta Cell）**：全局摘要常驻于 Working Memory 最前端，防止长会话主旨丢失
 - **双路召回**：向量相似度 + 关键词桥接，解决短查询与长摘要的语义不对齐
 - **模块化存储**：默认 SQLite + sqlite-vec，单文件零运维，支持后端切换
@@ -66,11 +66,14 @@ session-mem-main/
 
 | Phase | 状态 | 说明 |
 |-------|------|------|
+| Phase | 状态 | 说明 |
+|-------|------|------|
 | Phase 1 | 已完成 | 项目脚手架与核心接口设计 |
 | Phase 2 | 已完成 | 存储层完善与数据库构建（SQLite + sqlite-vec，5 张表，1024 维向量） |
-| Phase 3 | 已完成 | SenMemBuffer 实现与语义边界检测（28 个测试全部通过） |
-| Phase 4 | 进行中 | Cell 生成、Meta Cell 与 ShortMemBuffer |
-| Phase 5 | 待开始 | 检索策略与 Working Memory |
+| Phase 3 | 已完成 | SenMemBuffer 实现与语义边界检测（gap / hard limit / soft limit） |
+| Phase 4 | 已完成 | Cell 生成、Meta Cell 与 ShortMemBuffer（44 个测试通过） |
+| Phase 4.1 | 已完成 | 多切分点语义边界检测落地：LLM 返回切分点索引列表，支持一次检测生成多个 Cell |
+| Phase 5 | 进行中 | 检索策略与 Working Memory |
 | Phase 6 | 待开始 | 边界情况与异常处理 |
 | Phase 7 | 待开始 | LoCoMo 验证与测试 |
 
@@ -84,3 +87,7 @@ session-mem-main/
 ## 验证方法
 
 基于 LoCoMo 数据集，将同一 conversation 的多个 session 拼接为单一连续会话，评估 Token 节省率与回答准确率。
+
+## 最新更新
+
+- **2026-04-14** 完成 Phase 4.1：语义边界检测支持**多切分点索引**（`[3, 6]`），一次检测可生成多个 Cell，最后一段保留在 Buffer 继续累积。Meta Cell 更新在批量生成时仅触发 1 次。全部 54 个测试通过。
