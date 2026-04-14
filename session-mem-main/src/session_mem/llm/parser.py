@@ -4,11 +4,11 @@ import json
 from typing import Any
 
 
-def safe_json_loads(text: str) -> dict[str, Any] | None:
+def safe_json_loads(text: str) -> dict[str, Any] | list[Any] | None:
     """
     安全解析 LLM 返回的 JSON。
     先尝试直接解析，若失败则尝试提取 markdown 代码块内容，
-    再尝试用正则提取花括号内容，最后尝试逐行修复。
+    再尝试用正则提取花括号或方括号内容，最后尝试逐行修复。
     """
     # 1. 直接解析
     try:
@@ -43,6 +43,11 @@ def safe_json_loads(text: str) -> dict[str, Any] | None:
             return json.loads(cleaned)
         except json.JSONDecodeError:
             pass
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
 
     # 4. 尝试用正则提取最外层花括号内容，并在提取范围内去尾逗号
     import re
@@ -55,6 +60,20 @@ def safe_json_loads(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             pass
         # 在提取的花括号范围内去尾逗号，避免破坏外层字符串
+        no_trailing_comma = re.sub(r",(\s*[}\]])", r"\1", snippet)
+        try:
+            return json.loads(no_trailing_comma)
+        except json.JSONDecodeError:
+            pass
+
+    # 5. 尝试用正则提取最外层方括号内容（数组），并在提取范围内去尾逗号
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if match:
+        snippet = match.group(0)
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            pass
         no_trailing_comma = re.sub(r",(\s*[}\]])", r"\1", snippet)
         try:
             return json.loads(no_trailing_comma)

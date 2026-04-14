@@ -89,6 +89,31 @@ class SenMemBuffer:
         self._check_count = 0
         return cell_turns
 
+    def extract_segments(self, split_indices: list[int]) -> list[list[Turn]]:
+        """按多个切分点将 Buffer 拆分为多个段落，每段生成一个 Cell。
+
+        Args:
+            split_indices: 切分点索引列表，表示在该轮次**之后**切分。
+                例如 [3, 6] 表示前 3 轮为第 1 段，第 4-6 轮为第 2 段，
+                第 7 轮及之后保留在 Buffer 中。
+
+        Returns:
+            提取出的多段 Turn 列表。
+        """
+        if not split_indices:
+            return []
+        sorted_indices = sorted({i for i in split_indices if 0 < i <= len(self.turns)})
+        if not sorted_indices:
+            return []
+        segments: list[list[Turn]] = []
+        prev = 0
+        for idx in sorted_indices:
+            segments.append(self.turns[prev:idx])
+            prev = idx
+        self.turns = self.turns[prev:]
+        self._check_count = 0
+        return segments
+
     def raw_text(self) -> str:
         return "\n".join(f"[{t.role}]: {t.content}" for t in self.turns)
 

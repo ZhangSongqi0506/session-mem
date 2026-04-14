@@ -5,6 +5,30 @@
 
 ## Session: 2026-04-14
 
+### Phase 4.1: 多切分点语义边界检测落地
+- **Status:** complete
+- **Actions taken:**
+  1. 重构 `SemanticBoundaryDetector`：`should_split()` 从返回 `bool` 改为返回 `list[int]` 切分点索引列表
+  2. 更新边界检测 Prompt：要求 LLM 输出 JSON 格式 `{"split_indices": [3, 6]}`，标明 Buffer 内多处主题转折位置
+  3. 增强 `safe_json_loads`：新增方括号 `[...]` 数组提取能力，支持解析切分点列表
+  4. `SenMemBuffer` 新增 `extract_segments(split_indices)`：按多个切分点连续切分为 N+1 段，前 N 段生成 Cell，最后一段保留
+  5. `MemorySystem.add_turn()` 软限分支重构：接收切分点列表后循环调用 `_generate_cell`，支持一次检测产出多个 Cell
+  6. `_generate_cell` 新增 `trigger_meta` 参数：批量生成时仅最后一个 Cell 触发 Meta Cell 更新，避免重复调用
+  7. `cell_generator.py` 与 `meta_cell_generator.py` 增加 `isinstance(data, dict)` 防御，防止 list 返回值导致 `AttributeError`
+  8. 测试覆盖：`test_boundary_detector.py`（9 个测试）、`test_buffer.py`（+3 个测试）、`test_memory_system.py`（+2 个集成测试）
+  9. 全部 54 个测试通过；black + ruff 通过
+- **Files created/modified:**
+  - `src/session_mem/core/boundary_detector.py`
+  - `src/session_mem/llm/prompts.py`
+  - `src/session_mem/llm/parser.py`
+  - `src/session_mem/core/buffer.py`
+  - `src/session_mem/core/memory_system.py`
+  - `src/session_mem/core/cell_generator.py`
+  - `src/session_mem/core/meta_cell_generator.py`
+  - `tests/test_boundary_detector.py`
+  - `tests/test_buffer.py`
+  - `tests/test_memory_system.py`
+
 ### Phase 4: Cell 生成、Meta Cell 与 ShortMemBuffer
 - **Status:** complete
 - **Actions taken:**

@@ -39,6 +39,8 @@ class CellGenerator:
             logger.warning("LLM chat_completion failed for cell generation: %s", exc)
             response = ""
         data = safe_json_loads(response) or {}
+        if not isinstance(data, dict):
+            data = {}
 
         token_count = self.token_estimator.estimate(raw_text)
         timestamp_start = turns[0].timestamp if turns else None

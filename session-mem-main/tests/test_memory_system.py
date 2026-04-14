@@ -4,6 +4,7 @@ import pytest
 
 from session_mem.core.cell import MemoryCell
 from session_mem.core.memory_system import MemorySystem
+from session_mem.core.meta_cell_generator import MetaCellGenerator
 from session_mem.llm.base import LLMClient
 from session_mem.storage.base import CellStore, TextStore, VectorIndex
 from session_mem.utils.tokenizer import TokenEstimator
@@ -149,10 +150,10 @@ def test_hard_limit_forces_fragmented(ms: MemorySystem) -> None:
 def test_soft_limit_boundary_split(ms: MemorySystem) -> None:
     # 使用可控的 token estimator，使每轮约 100 tokens
     ms.sen_buffer.set_token_estimator(lambda text: len(text) // 4)
-    # 将边界检测器替换为总是 SPLIT
+    # 将边界检测器替换为返回单个切分点
     ms.boundary_detector = object.__new__(type(ms.boundary_detector))
     ms.boundary_detector.llm = MockLLM("SPLIT")
-    ms.boundary_detector.should_split = lambda turns: True
+    ms.boundary_detector.should_split = lambda turns: [5]
 
     # 6 轮 = 600 >= 512
     for i in range(6):
@@ -269,6 +270,77 @@ def test_cell_id_persists_after_restart() -> None:
     assert ms._cell_counter == 3
     next_id = ms._next_cell_id()
     assert next_id == "C_004"
+
+
+def test_soft_limit_multiple_boundary_splits(ms: MemorySystem) -> None:
+    """软限触发时，边界检测返回多个切分点，应依次生成多个 Cell。"""
+    ms.sen_buffer.set_token_estimator(lambda text: len(text) // 4)
+    ms.boundary_detector = object.__new__(type(ms.boundary_detector))
+    ms.boundary_detector.llm = MockLLM('{"split_indices": [3, 6]}')
+
+    # 8 轮 = 800 >= 512
+    for i in range(8):
+        ms.add_turn("user" if i % 2 == 0 else "assistant", "x" * 400, "2026-04-14T10:00:00Z")
+
+    cells = ms.short_buffer.all_cells()
+    assert len(cells) == 2
+    assert len(ms.sen_buffer.turns) == 2
+    assert cells[0].id == "C_001"
+    assert cells[1].id == "C_002"
+    assert cells[1].linked_prev == cells[0].id
+
+
+def test_soft_limit_multiple_splits_meta_cell_triggered_once() -> None:
+    """一次检测生成多个 Cell 时，Meta Cell 更新仅触发一次。"""
+    meta_store = DummyMetaCellStore()
+    ms = MemorySystem(
+        session_id="s1",
+        llm_client=MockLLM("CONTINUE"),
+        vector_index=DummyVectorIndex(),
+        cell_store=DummyCellStore(),
+        text_store=DummyTextStore(),
+        meta_cell_store=meta_store,
+    )
+    ms.sen_buffer.set_token_estimator(lambda text: len(text) // 4)
+    ms.boundary_detector = object.__new__(type(ms.boundary_detector))
+    ms.boundary_detector.llm = MockLLM('{"split_indices": [3, 6]}')
+
+    ms.cell_generator = object.__new__(type(ms.cell_generator))
+    ms.cell_generator.llm = MockLLM(
+        '{"summary": "test", "keywords": ["a"], "entities": ["a"], "cell_type": "fact", "confidence": 0.5, "causal_deps": []}'
+    )
+    ms.cell_generator.token_estimator = TokenEstimator()
+    ms.cell_generator.token_estimator.estimate = lambda text: len(text) // 4
+
+    call_count = 0
+
+    class CountingMetaGenerator(MetaCellGenerator):
+        def generate(self, session_id, cell, previous_meta=None, linked_cells=None):
+            nonlocal call_count
+            call_count += 1
+            return MemoryCell(
+                id=f"M_{call_count:03d}",
+                session_id=session_id,
+                cell_type="meta",
+                confidence=0.8,
+                summary="meta",
+                raw_text="meta text",
+                version=call_count,
+                status="active",
+                linked_cells=[cell.id],
+            )
+
+    ms.meta_cell_generator = CountingMetaGenerator(MockLLM("CONTINUE"))
+
+    for i in range(8):
+        ms.add_turn("user" if i % 2 == 0 else "assistant", "x" * 400, "2026-04-14T10:00:00Z")
+
+    # 生成了 2 个 Cell，Meta Cell 应只触发 1 次
+    assert len(ms.short_buffer.all_cells()) == 2
+    assert call_count == 1
+    meta = meta_store.get_active_meta_cell("s1")
+    assert meta is not None
+    assert meta.linked_cells == ["C_002"]
 
 
 def test_retrieve_context_includes_meta_cell() -> None:

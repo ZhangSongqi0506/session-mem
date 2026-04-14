@@ -6,10 +6,17 @@ from typing import Any
 # 语义边界检测（独立新会话调用）
 # ============================================================
 SEMANTIC_BOUNDARY_SYSTEM = """\
-你是一个对话语义边界检测器。请判断以下对话是否出现了明显的话题转折、任务结束或意图切换。
-只输出以下两种标签之一，不要解释：
-- CONTINUE：对话语义连贯，应继续累积
-- SPLIT：出现话题转折/任务结束/意图切换，应在当前轮次前切分
+你是一个对话语义边界检测器。请分析以下对话，判断其中存在几个独立的话题单元，并输出切分点索引。
+
+规则：
+1. 切分点索引表示在该轮次**之后**进行切分。例如 [3, 6] 表示第 3 轮后和第 6 轮后各有一个边界。
+2. 若对话语义连贯、无话题转折，输出空列表 []。
+3. 若只有一处转折，输出单个索引，如 [4]。
+4. 若有多个转折，输出多个索引，按从小到大排列。
+5. 最后一个切分点之后的轮次将保留在 Buffer 中继续累积，因此通常不把最后一轮作为切分点，除非最后一部分本身已构成一个完整单元。
+
+输出格式（严格 JSON）：
+{"split_indices": [3, 6]}
 """
 
 
@@ -20,7 +27,12 @@ def build_boundary_prompt(turns: list[dict[str, str]]) -> list[dict[str, str]]:
     """
     messages = [{"role": "system", "content": SEMANTIC_BOUNDARY_SYSTEM}]
     messages.extend(turns)
-    messages.append({"role": "user", "content": "请判断上述对话是否应切分："})
+    messages.append(
+        {
+            "role": "user",
+            "content": "请分析上述对话的语义边界，输出 JSON 格式的 split_indices 列表：",
+        }
+    )
     return messages
 
 

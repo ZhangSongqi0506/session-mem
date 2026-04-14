@@ -109,14 +109,14 @@ Phase 4.1
   6. 生成第二个普通 Cell 后，Meta Cell 被更新为新版本，旧版本标记 `archived`，新版本标记 `active`
 
 ### Phase 4.1: 多切分点语义边界检测落地
-- [ ] 重构 `SemanticBoundaryDetector`：从 `should_split()` 返回 `bool` 改为返回**切分点索引列表**（如 `[3, 6]`）
-- [ ] 更新边界检测 Prompt：要求 LLM 分析当前 Buffer 全部轮次，输出 JSON 格式的切分点索引列表及理由
-- [ ] 更新 `MemorySystem.add_turn()` 软限分支：支持接收多个切分点，依次生成 N 个 Cell，最后一段保留在 Buffer
-- [ ] 更新 `SenMemBuffer.extract_for_cell()` 或新增批量提取方法：按多个切分点连续切分 Buffer
-- [ ] 更新 `llm/parser.py`：增强 JSON fallback，支持解析切分点列表格式
-- [ ] 更新 `tests/test_boundary_detector.py`：补充多边界场景测试
-- [ ] 更新 `tests/test_memory_system.py`：补充一次检测生成多个 Cell 的集成测试
-- [ ] 更新 `tests/test_buffer.py`：补充多切分点提取后 Buffer 状态验证
+- [x] 重构 `SemanticBoundaryDetector`：从 `should_split()` 返回 `bool` 改为返回**切分点索引列表**（如 `[3, 6]`）
+- [x] 更新边界检测 Prompt：要求 LLM 分析当前 Buffer 全部轮次，输出 JSON 格式的切分点索引列表及理由
+- [x] 更新 `MemorySystem.add_turn()` 软限分支：支持接收多个切分点，依次生成 N 个 Cell，最后一段保留在 Buffer
+- [x] 更新 `SenMemBuffer.extract_for_cell()` 或新增批量提取方法：按多个切分点连续切分 Buffer
+- [x] 更新 `llm/parser.py`：增强 JSON fallback，支持解析切分点列表格式
+- [x] 更新 `tests/test_boundary_detector.py`：补充多边界场景测试
+- [x] 更新 `tests/test_memory_system.py`：补充一次检测生成多个 Cell 的集成测试
+- [x] 更新 `tests/test_buffer.py`：补充多切分点提取后 Buffer 状态验证
 - **涉及代码**:
   - `src/session_mem/core/boundary_detector.py`（核心：返回类型改为 `list[int]`）
   - `src/session_mem/llm/prompts.py`（新增/修改边界检测 Prompt，要求输出切分点列表）

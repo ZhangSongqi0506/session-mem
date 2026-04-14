@@ -73,10 +73,15 @@ class MemorySystem:
 
         # 3. 软限触发语义边界检测
         if self.sen_buffer.should_trigger_check():
-            if self.boundary_detector.should_split(self.sen_buffer.turns):
-                cutoff = max(1, len(self.sen_buffer.turns) - 1)
-                cell_turns = self.sen_buffer.extract_for_cell(cutoff)
-                self._generate_cell(cell_turns, fragmented=False)
+            split_indices = self.boundary_detector.should_split(self.sen_buffer.turns)
+            if split_indices:
+                segments = self.sen_buffer.extract_segments(split_indices)
+                for i, segment in enumerate(segments):
+                    self._generate_cell(
+                        segment,
+                        fragmented=False,
+                        trigger_meta=(i == len(segments) - 1),
+                    )
             return
 
     def retrieve_context(
@@ -159,7 +164,9 @@ class MemorySystem:
         self._cell_counter += 1
         return f"C_{self._cell_counter:03d}"
 
-    def _generate_cell(self, turns: list[Turn], fragmented: bool = False) -> None:
+    def _generate_cell(
+        self, turns: list[Turn], fragmented: bool = False, trigger_meta: bool = True
+    ) -> None:
         """将提取的轮次生成 Cell 并持久化。"""
         if not turns:
             return
@@ -187,6 +194,6 @@ class MemorySystem:
         self.short_buffer.add(cell)
         self._last_cell_id = cell.id
 
-        # Meta Cell 生成 / 更新
-        if self.meta_cell_store is not None:
+        # Meta Cell 生成 / 更新（批量生成时仅触发最后一次）
+        if trigger_meta and self.meta_cell_store is not None:
             self._update_meta_cell(cell)

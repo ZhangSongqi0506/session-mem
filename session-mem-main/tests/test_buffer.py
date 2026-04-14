@@ -137,6 +137,41 @@ def test_extract_for_cell_resets_check_count(buffer: SenMemBuffer) -> None:
     assert not buffer.should_trigger_check()
 
 
+def test_extract_segments_basic(buffer: SenMemBuffer) -> None:
+    for i in range(8):
+        role = "user" if i % 2 == 0 else "assistant"
+        buffer.add_turn(Turn(role, str(i), "2026-04-14T10:00:00Z"))
+    segments = buffer.extract_segments([3, 6])
+    assert len(segments) == 2
+    assert len(segments[0]) == 3
+    assert len(segments[1]) == 3
+    assert len(buffer.turns) == 2
+    assert segments[0][0].content == "0"
+    assert segments[0][-1].content == "2"
+    assert segments[1][0].content == "3"
+    assert segments[1][-1].content == "5"
+    assert buffer.turns[0].content == "6"
+
+
+def test_extract_segments_resets_check_count(buffer: SenMemBuffer) -> None:
+    for _ in range(10):
+        buffer.add_turn(Turn("user", "x" * 400, "2026-04-14T10:00:00Z"))
+    assert buffer.should_trigger_check()  # 1000 >= 512
+    buffer.extract_segments([3, 6])
+    # 重置后，剩余 4 轮 = 400 tokens，再添加一轮不应触发
+    buffer.add_turn(Turn("user", "x" * 400, "2026-04-14T10:00:01Z"))
+    assert not buffer.should_trigger_check()
+
+
+def test_extract_segments_empty_and_invalid() -> None:
+    b = SenMemBuffer(session_id="s1")
+    for i in range(3):
+        b.add_turn(Turn("user", str(i), "2026-04-14T10:00:00Z"))
+    assert b.extract_segments([]) == []
+    assert b.extract_segments([0, -1, 100]) == []
+    assert len(b.turns) == 3  # buffer 未被修改
+
+
 # ============================================================
 # ShortMemBuffer 测试
 # ============================================================

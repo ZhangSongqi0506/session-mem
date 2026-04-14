@@ -61,6 +61,8 @@ class MetaCellGenerator:
             response = ""
 
         data = safe_json_loads(response) or {}
+        if not isinstance(data, dict):
+            data = {}
 
         llm_summary = data.get("summary", "")
         version = (previous_meta.version or 0) + 1 if previous_meta else 1
