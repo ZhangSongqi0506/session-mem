@@ -45,7 +45,6 @@ class MetaCellGenerator:
         if previous_meta:
             prev_dict = {
                 "id": previous_meta.id,
-                "summary": previous_meta.summary,
                 "raw_text": previous_meta.raw_text,
             }
 

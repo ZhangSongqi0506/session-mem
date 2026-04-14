@@ -97,7 +97,7 @@ META_CELL_GENERATION_SYSTEM = """\
 你是一个会话主旨摘要专家。请根据已生成的 Memory Cell 列表，提炼出一段会话级全局摘要（Meta Cell）。
 
 要求：
-1. summary: 80-120 tokens，概括会话的核心目标、当前进度和关键约束
+1. summary: 概括会话的核心目标、当前进度和关键约束。长度自由，以准确传达当前全局状态为准，不截断
 2. keywords: 5-8 个关键词（list）
 3. entities: 3-5 个关键实体（list）
 4. confidence: 0-1 之间的 float
@@ -155,12 +155,12 @@ def build_meta_cell_prompt(
     cells_text = "\n\n".join(
         f"Cell {i + 1} (ID: {c['id']}):\nSummary: {c.get('summary', '')}\n"
         f"Keywords: {c.get('keywords', [])}\nEntities: {c.get('entities', [])}\n"
-        f"Type: {c.get('cell_type', 'fact')}\nRaw: {c.get('raw_text', '')[:200]}"
+        f"Type: {c.get('cell_type', 'fact')}\nRaw: {c.get('raw_text', '')}"
         for i, c in enumerate(cells)
     )
     if previous_meta:
         user_content = (
-            f"已有 Meta Cell:\n{previous_meta.get('summary', '')}\n\n"
+            f"已有 Meta Cell 全文:\n{previous_meta.get('raw_text', '')}\n\n"
             f"当前全部普通 Cell:\n{cells_text}\n\n"
             "请全量融合重写 Meta Cell JSON："
         )
