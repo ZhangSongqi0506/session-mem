@@ -10,13 +10,18 @@
 - **Actions taken:**
   1. 实现 Embedding 客户端（QwenClient.embed），支持独立配置 Xinference bge-large-en-v1.5
   2. 完善 CellGenerator：增加 LLM 异常捕获、JSON 解析 fallback（代码块/正则/去尾逗号）、简单摘要/关键词 fallback
-  3. 实现 MetaCellGenerator：初始生成 + 全量融合更新，配套 Prompt 与 Schema
+  3. 实现 MetaCellGenerator：初始生成 + 增量融合更新，配套 Prompt 与 Schema
   4. ShortMemBuffer 重构为从 CellStore 按 session_id 加载
   5. MemorySystem 完善闭环：生成 → 存元数据 → 存原文 → 存向量 → ShortMemBuffer；触发 Meta Cell 生成/更新
   6. WorkingMemory 添加 meta_cell 字段，to_prompt 无条件前置 Meta Cell 全文
   7. 新增 tests/test_cell_generator.py（4 个测试）、tests/test_meta_cell_generator.py（4 个测试）
   8. 扩展 tests/test_buffer.py（ShortMemBuffer 2 个测试）、tests/test_memory_system.py（embedding + meta cell 3 个测试）
   9. 全部 41 个测试通过；black + ruff 通过
+- **Post-Phase 4 热修复（2026-04-14）：**
+  1. 修复 Cell ID 生成器非持久化：初始化时从 cell_store 解析最大序号
+  2. 修复 causal_deps / metadata 有生成无存储：SQLite schema 新增两列并同步序列化
+  3. 修复 Meta Cell 更新偏离技术方案：由全量 cells 输入改为增量 single-cell 输入（previous_meta.raw_text + newest_cell.raw_text）
+  4. 更新对应测试，全部 43 个测试通过
 - **Files created/modified:**
   - `src/session_mem/llm/base.py`（新增 embed 抽象）
   - `src/session_mem/llm/qwen_client.py`（新增 embed 实现与 Embedding 配置）
