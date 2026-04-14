@@ -1,7 +1,6 @@
 # 单会话级临时记忆系统（Session-scoped Working Memory）技术方案
 
-> **代码仓库**：`session-mem`  
-> **文档版本**：v2.0
+> **代码仓库**：`session-mem`**文档版本**：v2.5
 
 **目标**：构建低成本、低延迟的单会话记忆系统，实现 Input Token 降低 40-60%，回答准确率损失 <5%。
 
@@ -81,13 +80,16 @@
 *   **读-写分离**：写入阶段仅做累积与边界检测，零计算开销；切分阶段才调用 LLM 进行质量压缩，成本发生在对话间隙（非用户等待路径）
     
 *   **滑动保留**：触发切分后，**新主题的首轮对话不进入旧 Cell**，而是留在 Buffer 作为新 Cell 的种子，保证相邻 Cell 间的**时序连续性**（避免丢轮）
+    
 
 #### 时间戳注入（进入缓存时）
 
 每一轮对话进入 SenMemBuffer 时，系统为其注入**统一格式的收到时间戳**（ISO 8601，UTC）。该时间戳服务于单会话跨长时间场景：
 
 *   **间隔检测**：当相邻两轮时间差超过阈值（如 30 分钟），可作为额外的语义切分信号，提示用户可能已离开并重新发起话题。
+    
 *   **时序检索**：支持后续按时间范围定位历史内容（如"昨天说的预算"）。
+    
 *   **元信息继承**：生成 Cell 时，将该 Cell 内首轮与末轮的时间戳写入元信息层，形成该单元的时间范围标记。
     
 
@@ -108,29 +110,27 @@
 
 *   **内容构成**：
     
-    *   **Meta Cell 全局摘要**：会话主旨单元，强制常驻（约 200-600 tokens，随会话深度动态增长）
-    
+    *   **Meta Cell 全局摘要**：会话主旨单元，强制常驻（约 200-600 tokens，随会话深度动态增长）
+        
     *   **热区原文**：最近 2-3 轮对话（未压缩，保证对话连贯性，约 400 tokens）
         
     *   **激活 Cell 原文**：通过检索选中的 1-2 个 Cell 的**完整原文**（从冷区按需回溯，约 800-1200 tokens）
         
     *   **当前查询**：用户最新问题（经查询重写后的版本，约 100 tokens）
         
-
 *   **加载原则**：
     
     *   **命中即全量**：凡是被检索命中的，**无条件回溯其完整原文**进入 Prompt，不截断、不摘要化
         
     *   **未命中即隔离**：未被检索命中的历史 Cell，**完全不进入**工作记忆区，其原文保留在冷区暂存区，不占用 Prompt Token
         
-
 *   **Token 节省逻辑**：
     
     *   20 轮全量历史约 4000+ tokens
         
-    *   本方案仅携带：Meta Cell 400 + 热区 400 + 命中 Cell 原文 1000 + 查询 100 = **约 1900 tokens**
+    *   本方案仅携带：Meta Cell 400 + 热区 400 + 命中 Cell 原文 1000 + 查询 100 = **约 1900 tokens**
         
-    *   **节省率 50%+** 来源于**丢弃未被引用的历史 Cell**，而非压缩命中 Cell 的内容。Meta Cell 以少量额外 Token 换取全局主旨的确定性不丢
+    *   **节省率 50%+** 来源于**丢弃未被引用的历史 Cell**，而非压缩命中 Cell 的内容。Meta Cell 以少量额外 Token 换取全局主旨的确定性不丢
         
 
 ---
@@ -153,12 +153,10 @@ Cell 并非固定轮次生成，而是**语义驱动**：
         
     *   上下文关联度骤降（当前轮与上一轮 Embedding 相似度 <0.6）
         
-    *   累积轮次超过 5 轮（强制切分，防止单 Cell 过大）
-        
 
 **边界检测实现**：
 
-*   主路径：轻量小模型（1.5B 级）二分类判断（是否话题转折）
+*   主路径：调用模型二分类判断（是否话题转折）
     
 *   Fallback：规则匹配（检测特定标点、关键词）+ 向量相似度阈值
     
@@ -175,7 +173,7 @@ Cell 并非固定轮次生成，而是**语义驱动**：
         
     *   关键词（5-8 个 TF-IDF 提取术语）
         
-    *   512 维向量嵌入（用于语义相似度计算）
+    *   1024 维向量嵌入（用于语义相似度计算）
         
 2.  **回溯层**（用于加载进 Prompt）：
     
@@ -195,42 +193,52 @@ Cell 并非固定轮次生成，而是**语义驱动**：
         
 4.  **关系层**（可选，用于复杂场景）：
     
-    *   因果标记（如当前 Cell 的"折扣"依赖于 Cell\_002 的"预算"）
+    *   因果标记（如当前 Cell 的"折扣"依赖于 Cell\_002 的"预算"）
         
-    *   实体共现（记录与其他 Cell 共享的实体）
+    *   实体共现（记录与其他 Cell 共享的实体）
         
 
-### 3.3 Meta Cell（会话主旨单元）
+### 3.3 Meta Cell（会话主旨单元）
 
-在普通 Cell 之外，系统引入一个**会话级全局摘要单元**（Meta Cell），用于承载整个会话的**核心目标、有效约束、当前状态与关键决策**。它不参与向量检索竞争，而是**强制常驻于 Working Memory 最前端**，作为所有普通 Cell 的"上级视图"，解决长会话中因 Top-K 检索筛选导致"主旨任务缺失"的问题。
+在普通 Cell 之外，系统引入一个**会话级全局摘要单元**（Meta Cell），用于承载整个会话的**核心目标、有效约束、当前状态与关键决策**。它不参与向量检索竞争，而是**强制常驻于 Working Memory 最前端**，作为所有普通 Cell 的"上级视图"，解决长会话中因 Top-K 检索筛选导致"主旨任务缺失"的问题。
 
 #### 核心设计
 
-*   **每会话唯一**：Meta Cell 与 `session_id` 绑定，一个会话始终只维护 1 个 active 版本。
-*   **全量融合更新**：每生成一个普通 Cell，立即将"当前 Meta Cell 全文 + 新 Cell 原文"送入 LLM，由 LLM 重写输出新的全局摘要。
-*   **无条件注入**：Working Memory 组装时，Meta Cell 固定放在 Prompt 最前端，优先级高于热区原文与检索召回 Cell。
+*   **每会话唯一**：Meta Cell 与 `session_id` 绑定，一个会话始终只维护 1 个 active 版本。
+    
+*   **全量融合更新**：每生成一个普通 Cell，立即将"当前 Meta Cell 全文 + 新 Cell 原文"送入 LLM，由 LLM 重写输出新的全局摘要。
+    
+*   **无条件注入**：Working Memory 组装时，Meta Cell 固定放在 Prompt 最前端，优先级高于热区原文与检索召回 Cell。
+    
 *   **长度不设硬上限**：接受随会话深度自然膨胀，以全局连贯性的保真为优先。
+    
 
 #### 生命周期
 
 | 阶段 | 触发条件 | 行为 |
-|------|---------|------|
-| **诞生** | 首个普通 Cell（`C_001`）生成完毕 | 以 `C_001` 的原文为唯一输入，调用 LLM 生成初始 Meta Cell |
-| **更新** | 此后每生成一个普通 Cell `C_N` | 输入 = 当前 active Meta Cell 全文 + `C_N` 原文，调用 LLM 全量重写，输出新版 Meta Cell |
-| **归档** | 新版 Meta Cell 写入后 | 旧版状态标记为 `archived`，仅最新版状态为 `active` |
+| --- | --- | --- |
+| **诞生** | 首个普通 Cell（`C_001`）生成完毕 | 以 `C_001` 的原文为唯一输入，调用 LLM 生成初始 Meta Cell |
+| **更新** | 此后每生成一个普通 Cell `C_N` | 输入 = 当前 active Meta Cell 全文 + `C_N` 原文，调用 LLM 全量重写，输出新版 Meta Cell |
+| **归档** | 新版 Meta Cell 写入后 | 旧版状态标记为 `archived`，仅最新版状态为 `active` |
 
-#### 更新 Prompt 核心要求
+#### 更新 Prompt 核心要求
 
-LLM 在全量融合时需遵循：
-1. **保留有效约束**：核心目标、预算、偏好、时间等仍成立的信息必须保留。
-2. **直接修正覆盖**：若新 Cell 明确推翻旧信息，直接更新为新状态，不保留过时内容。
-3. **融入关键进展**：新 Cell 带来的决策、结论、新约束需被吸收。
-4. **丢弃纯细节**：具体价格、时刻表等局部事实不进入 Meta Cell，留给普通 Cell 承载。
-5. **长度自由**：以准确传达当前全局状态为准，不截断。
+LLM 在全量融合时需遵循：
+
+1.  **保留有效约束**：核心目标、预算、偏好、时间等仍成立的信息必须保留。
+    
+2.  **直接修正覆盖**：若新 Cell 明确推翻旧信息，直接更新为新状态，不保留过时内容。
+    
+3.  **融入关键进展**：新 Cell 带来的决策、结论、新约束需被吸收。
+    
+4.  **丢弃纯细节**：具体价格、时刻表等局部事实不进入 Meta Cell，留给普通 Cell 承载。
+    
+5.  **长度自由**：以准确传达当前全局状态为准，不截断。
+    
 
 #### 数据结构
 
-复用现有 `cells` 表结构，以 `cell_type = 'meta'` 区分，通过 `status` 字段管理版本生命周期：
+复用现有 `cells` 表结构，以 `cell_type = 'meta'` 区分，通过 `status` 字段管理版本生命周期：
 
 ```sql
 CREATE TABLE meta_cells (
@@ -246,15 +254,16 @@ CREATE TABLE meta_cells (
     updated_at DATETIME,
     PRIMARY KEY (session_id, version)
 );
-```
-
-**查询规则**：`WorkingMemory` 组装时，始终取 `status = 'active'` 且 `version` 最大的那一条。
-
-#### Working Memory 注入位置
-
-Meta Cell 固定置于 Prompt 最前端：
 
 ```
+
+**查询规则**：`WorkingMemory` 组装时，始终取 `status = 'active'` 且 `version` 最大的那一条。
+
+#### Working Memory 注入位置
+
+Meta Cell 固定置于 Prompt 最前端：
+
+```plaintext
 [会话主旨]
 {meta_cell.raw_text}
 
@@ -266,28 +275,32 @@ Meta Cell 固定置于 Prompt 最前端：
 
 [当前查询]
 {query}
+
 ```
 
-Prompt 内具体标签名称（如 `[会话主旨]`、`[全局上下文]` 等）由开发阶段根据实际效果调整，方案中不做死规定。
+Prompt 内具体标签名称（如 `[会话主旨]`、`[全局上下文]` 等）由开发阶段根据实际效果调整，方案中不做死规定。
 
 #### 与现有模块的改动点
 
 | 模块 | 改动 |
-|------|------|
-| `CellGenerator` | 生成普通 Cell 后，追加调用 `MetaCellGenerator.update(new_cell)` |
+| --- | --- |
+| `CellGenerator` | 生成普通 Cell 后，追加调用 `MetaCellGenerator.update(new_cell)` |
 | `MetaCellGenerator` | 新增模块，负责首次生成与全量融合更新 |
-| `SQLiteBackend` | 新增 `save_meta_cell()` / `get_active_meta_cell()` 方法 |
-| `WorkingMemory` | `assemble()` 方法首行无条件插入 active Meta Cell |
+| `SQLiteBackend` | 新增 `save_meta_cell()` / `get_active_meta_cell()` 方法 |
+| `WorkingMemory` | `assemble()` 方法首行无条件插入 active Meta Cell |
 
 #### 成本与风险兜底
 
-*   **成本**：20 轮对话若生成 5 个普通 Cell，则 Meta Cell 更新 5 次。每次输入 ≈ 当前 Meta Cell + 新 Cell 原文 + Prompt 开销。总增量成本约为普通 Cell 生成成本的 **0.5–1 倍**。
-*   **幻觉风险**：LLM 更新时可能错误删除有效约束。但由于原始普通 Cell 完整保留，后续检索仍有机会召回原文，形成双重保险。
-*   **长度膨胀**：明确接受该 trade-off，以换取全局连贯性的确定性保障。
+*   **成本**：20 轮对话若生成 5 个普通 Cell，则 Meta Cell 更新 5 次。每次输入 ≈ 当前 Meta Cell + 新 Cell 原文 + Prompt 开销。总增量成本约为普通 Cell 生成成本的 **0.5–1 倍**。
+    
+*   **幻觉风险**：LLM 更新时可能错误删除有效约束。但由于原始普通 Cell 完整保留，后续检索仍有机会召回原文，形成双重保险。
+    
+*   **长度膨胀**：明确接受该 trade-off，以换取全局连贯性的确定性保障。
+    
 
 ---
 
-## 4. 检索策略：从查询到上下文组装
+## 4. 检索策略：从查询到上下文组装
 
 检索的核心挑战是**短查询与长摘要的语义空间不对齐**（如"多少钱？"与"用户设定预算上限为 1 万元"）。系统采用**查询重写 + 双路召回 + 预算感知的动态加载**三阶段策略。
 
@@ -337,7 +350,7 @@ Prompt 内具体标签名称（如 `[会话主旨]`、`[全局上下文]` 等）
 *   关键词匹配作为**重排序信号**，而非独立召回分支
     
 
-**融合公式**： final\_score = 0.75 \* vector\_score + 0.25 \* keyword\_score
+**融合公式**： final\_score = 0.75 \* vector\_score + 0.25 \* keyword\_score
 
 ### 4.3 低置信度 Fallback（可选增强）
 
@@ -365,7 +378,9 @@ def assemble_working_memory(query, hot_zone, faiss_index, cold_storage, meta_cel
     candidate_cells = retrieve_top_k(query, faiss_index, k=2)  # 仅取Top-2
     
     # 2. 全量回溯（无预算检查，无条件加载）
-    activated_content = []
+
+    activated_content = [ ]
+
     for cell in candidate_cells:
         full_text = cold_storage.load(cell.pointer)  # 完整原文，不截断
         activated_content.append(full_text)
@@ -373,6 +388,7 @@ def assemble_working_memory(query, hot_zone, faiss_index, cold_storage, meta_cel
     # 3. 组装（Meta Cell + 热区 + 命中Cell全文 + 查询）
     prompt_context = [meta_cell.raw_text] + hot_zone + activated_content + [query]
     return prompt_context
+
 ```
 
 ### 4.4.2 准确性保障机制
@@ -381,32 +397,32 @@ def assemble_working_memory(query, hot_zone, faiss_index, cold_storage, meta_cel
 
 *   **全文保真**：只要 Cell 被命中，用户第 2 轮说的"预算 1 万"原话，第 20 轮依然原封不动出现在 Prompt 中
     
-*   **Meta Cell 兜底**：即使某约束所在的普通 Cell 未被检索命中，Meta Cell 中仍保留该约束的摘要形态（如"预算上限 1 万元"），避免主旨任务完全丢失
+*   **Meta Cell 兜底**：即使某约束所在的普通 Cell 未被检索命中，Meta Cell 中仍保留该约束的摘要形态（如"预算上限 1 万元"），避免主旨任务完全丢失
     
 *   **防漏召回**：通过**时序链接**主动激活关联 Cell（见 6.2 节），避免"预算约束在第 2 轮 Cell，第 20 轮查询只命中折扣 Cell，导致遗忘预算"的问题
     
 
 ---
 
-## 5. 存储与持久化设计
+## 5. 存储与持久化设计
 
-为支撑 Skill、MCP Tool 及 LangChain Memory 组件化目标，存储层采用**模块化可拔插**设计：底层定义统一抽象接口，默认以**零运维的 SQLite + sqlite-vec**实现，同时预留后端切换能力（如 FAISS、Chroma、PostgreSQL 等）。
+为支撑 Skill、MCP Tool 及 LangChain Memory 组件化目标，存储层采用**模块化可拔插**设计：底层定义统一抽象接口，默认以**零运维的 SQLite + sqlite-vec**实现，同时预留后端切换能力（如 FAISS、Chroma、PostgreSQL 等）。
 
-### 5.1 存储抽象层
+### 5.1 存储抽象层
 
 系统对持久化需求拆分为三个正交接口，任何后端只需实现对应接口即可接入：
 
 | 接口 | 职责 | 当前默认实现 |
-|------|------|-------------|
-| `VectorIndex` | 语义向量检索（Top-K 相似度搜索） | `sqlite-vec` 虚拟表 |
-| `CellStore` | Cell 元信息、关系链、实体共现的增删查改 | SQLite 关系表 |
-| `TextStore` | 完整原文的按需加载 | SQLite TEXT 字段 |
+| --- | --- | --- |
+| `VectorIndex` | 语义向量检索（Top-K 相似度搜索） | `sqlite-vec` 虚拟表 |
+| `CellStore` | Cell 元信息、关系链、实体共现的增删查改 | SQLite 关系表 |
+| `TextStore` | 完整原文的按需加载 | SQLite TEXT 字段 |
 
-### 5.2 默认后端：SQLiteBackend
+### 5.2 默认后端：SQLiteBackend
 
-默认使用单个 `.db` 文件承载全部数据，无需额外服务，开箱即用：
+默认使用单个 `.db` 文件承载全部数据，无需额外服务，开箱即用：
 
-**表 1：cells（Cell 结构化数据）**
+**表 1：cells（Cell 结构化数据）**
 
 ```sql
 CREATE TABLE cells (
@@ -427,9 +443,10 @@ CREATE TABLE cells (
 CREATE INDEX idx_cells_session ON cells(session_id);
 CREATE INDEX idx_cells_type ON cells(cell_type);
 CREATE INDEX idx_cells_linked_prev ON cells(linked_prev);
+
 ```
 
-**表 2：cell_texts（原文回溯）**
+**表 2：cell\_texts（原文回溯）**
 
 ```sql
 CREATE TABLE cell_texts (
@@ -438,9 +455,10 @@ CREATE TABLE cell_texts (
     token_count INTEGER,
     FOREIGN KEY (cell_id) REFERENCES cells(id)
 );
+
 ```
 
-**表 3：entity_links（实体共现关系）**
+**表 3：entity\_links（实体共现关系）**
 
 ```sql
 CREATE TABLE entity_links (
@@ -449,18 +467,20 @@ CREATE TABLE entity_links (
     FOREIGN KEY (cell_id) REFERENCES cells(id)
 );
 CREATE INDEX idx_entity_links_entity ON entity_links(entity);
+
 ```
 
-**表 4：cell_vectors（向量索引，sqlite-vec 扩展）**
+**表 4：cell\_vectors（向量索引，sqlite-vec 扩展）**
 
 ```sql
 CREATE VIRTUAL TABLE cell_vectors USING vec0(
     cell_id TEXT PRIMARY KEY,
     embedding FLOAT[512]  -- 维度根据嵌入模型动态配置
 );
+
 ```
 
-**表 5：meta_cells（主旨单元，独立维护会话级全局摘要）**
+**表 5：meta\_cells（主旨单元，独立维护会话级全局摘要）**
 
 ```sql
 CREATE TABLE meta_cells (
@@ -479,65 +499,49 @@ CREATE TABLE meta_cells (
 
 CREATE INDEX idx_meta_cells_session ON meta_cells(session_id);
 CREATE INDEX idx_meta_cells_status ON meta_cells(status);
+
 ```
 
-### 5.3 内存与磁盘的分层关系
+### 5.3 内存与磁盘的分层关系
 
-MVP 阶段，ShortMemBuffer 仅作为**逻辑索引概念**存在：所有 Cell 的元数据和向量索引均保存在 SQLite 中，检索时直接查询数据库。内存中不维护复杂的分级缓存：
+MVP 阶段，ShortMemBuffer 仅作为**逻辑索引概念**存在：所有 Cell 的元数据和向量索引均保存在 SQLite 中，检索时直接查询数据库。内存中不维护复杂的分级缓存：
 
-*   **全量 Cell**：所有已生成 Cell 的向量索引和元数据均保留在 SQLite，参与统一检索。
+*   **全量 Cell**：所有已生成 Cell 的向量索引和元数据均保留在 SQLite，参与统一检索。
+    
 *   **生命周期预留**：当会话长度增长到一定规模（如 >100 个 Cell）时，再引入内存缓存、活跃窗口或归档策略。
+    
 
-### 5.4 模型无关与扩展预留
+### 5.4 模型无关与扩展预留
 
-*   **维度可配置**：`cell_vectors` 的向量维度在初始化时根据所选 Encoder 动态确定，不绑定特定模型。
-*   **原文优先**：`raw_text` 字段永不被压缩或摘要化替换，确保不同 LLM 跨模型复用时看到的是同一套原始约束。
-*   **跨会话预留**：`cells` 表已包含 `session_id` 字段，当前按单会话过滤；未来扩展长期记忆时，可直接放宽该过滤条件实现跨会话检索，无需改表结构。
+*   **维度可配置**：`cell_vectors` 的向量维度在初始化时根据所选 Encoder 动态确定，不绑定特定模型。
+    
+*   **原文优先**：`raw_text` 字段永不被压缩或摘要化替换，确保不同 LLM 跨模型复用时看到的是同一套原始约束。
+    
+*   **跨会话预留**：`cells` 表已包含 `session_id` 字段，当前按单会话过滤；未来扩展长期记忆时，可直接放宽该过滤条件实现跨会话检索，无需改表结构。
+    
 
 ---
 
-## 6. 边界情况与异常处理
+## 6. 边界情况与异常处理
 
-### 6.1 超长会话（>50 轮）
+### 6.1 因果链断裂（长程依赖）
 
-当会话轮次增长，Cell 数量显著增加时：
+当用户提问涉及跨多个 Cell 的因果关系（如"基于预算限制，刚才选的配置还能优化吗？"）：
 
-*   **分级存储（MVP 阶段简化）**：
+*   **时序链接追踪**：通过 Cell 的 `linked_prev` 链，自动加载关联的约束类 Cell（即使其未被向量检索命中）
     
-    *   所有 Cell 均保留在 SQLite 中，统一检索。
-    *   原文清理策略照常运行：高置信度 Cell 的原文 24 小时后可清理；低置信度保留至会话结束。
-        
-
-*   **原文清理**：
+*   **实体共现激活**：若当前激活 Cell 含"预算"实体，自动检索其他含"预算"的 Cell，构建**约束上下文**
     
-    *   高置信度 Cell 的原文在 24 小时后可清理
-        
-    *   低置信度 Cell 原文保留至会话结束
-        
-    *   提供配置项 `aggressive_cleanup`，开启后仅保留最近 10 个 Cell 的原文
-        
-
-
-### 6.2 因果链断裂（长程依赖）
-
-当用户提问涉及跨多个 Cell 的因果关系（如"基于预算限制，刚才选的配置还能优化吗？"）：
-
-*   **时序链接追踪**：通过 Cell 的 `linked_prev` 链，自动加载关联的约束类 Cell（即使其未被向量检索命中）
-    
-*   **实体共现激活**：若当前激活 Cell 含"预算"实体，自动检索其他含"预算"的 Cell，构建**约束上下文**
-    
-*   **显式标记**：在 Cell 生成时，LLM 识别并标记"此 Cell 包含对其他 Cell 的依赖"，检索时强制级联加载
+*   **显式标记**：在 Cell 生成时，LLM 识别并标记"此 Cell 包含对其他 Cell 的依赖"，检索时强制级联加载
     
 
-
-### 6.3 检索失败（冷启动/新话题）
+### 6.2 检索失败（冷启动/新话题）
 
 当检索无匹配（如用户突然问与历史无关的问题）：
 
-*   **零回溯模式**：工作记忆包含 Meta Cell（全局主旨仍保留）+ 热区原文（最近 2 轮）+ 当前查询，不强行引入无关的普通 Cell
+*   **零回溯模式**：工作记忆包含 Meta Cell（全局主旨仍保留）+ 热区原文（最近 2 轮）+ 当前查询，不强行引入无关的普通 Cell
     
-*   **新话题检测**：若连续 3 轮检索置信度 <0.5，触发"新话题"标记，清空 SenMemBuffer（旧话题原文强制生成 Cell 归档），避免旧话题碎片干扰新话题
-    
+*   **新话题检测**：若连续 3 轮检索置信度 <0.5，触发"新话题"标记，清空 SenMemBuffer（旧话题原文强制生成 Cell 归档），避免旧话题碎片干扰新话题
     
 
 ---
