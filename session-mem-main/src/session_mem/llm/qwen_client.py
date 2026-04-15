@@ -19,12 +19,14 @@ class QwenClient(LLMClient):
         embedding_api_key: str | None = None,
         embedding_base_url: str | None = None,
         embedding_model: str = "bge-large-en-v1.5",
+        supports_json_schema: bool = False,
     ):
         self.api_key = api_key or os.getenv("SESSION_MEM_API_LLM_API_KEY", "not-needed")
         self.base_url = base_url or os.getenv(
             "SESSION_MEM_API_LLM_BASE_URL", "http://172.10.10.200/v1"
         )
         self.model = model
+        self.supports_json_schema = supports_json_schema
         self._client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
@@ -53,9 +55,10 @@ class QwenClient(LLMClient):
     ) -> str:
         extra = {}
         if response_format:
-            extra["response_format"] = response_format
+            if self.supports_json_schema or response_format.get("type") != "json_schema":
+                extra["response_format"] = response_format
         resp = self._client.chat.completions.create(
-            model=self.model,
+            model=kwargs.pop("model", self.model),
             messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
             **extra,

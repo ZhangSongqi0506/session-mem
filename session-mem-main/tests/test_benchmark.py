@@ -317,3 +317,17 @@ def test_judge_answer_fallback_on_failure():
 
     score = judge_answer("q", "a", "ans", FakeJudge())
     assert score == 0.0
+
+
+def test_judge_answer_logs_exception_on_failure(caplog):
+    import logging
+
+    class FakeJudge:
+        def chat_completion(self, messages, model, temperature):
+            raise RuntimeError("network down")
+
+    with caplog.at_level(logging.WARNING, logger="benchmarks.metrics"):
+        score = judge_answer("q", "a", "ans", FakeJudge())
+
+    assert score == 0.0
+    assert "network down" in caplog.text

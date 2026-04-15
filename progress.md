@@ -5,6 +5,21 @@
 
 ## Session: 2026-04-15
 
+### Phase 8: 运行优化与问题修复（小样本跑测问题定位与修复计划）
+- **Status:** in_progress（已定位根因，开始代码修复）
+- **Actions taken:**
+  1. 完成服务器小样本跑测（`--max_sessions 2 --max_qa_per_session 2 --run_accuracy`），产出日志与结果文件
+  2. 定位问题 1：LLM 后端（vLLM/OneAPI 代理）不支持 `json_schema` 类型的 `response_format`，导致 CellGenerator/MetaCellGenerator 全部 400 失败，Token 节省率仅 4.84%
+  3. 定位问题 2：`QwenClient.chat_completion()` 硬编码 `model=self.model`，与 `judge_answer()` 传入的 `model=judge_model` 冲突，抛出 `TypeError` 后被裸 `except Exception: pass` 静默吞掉，Judge 全为 0.0
+  4. 制定修复计划并更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件
+  5. 修复计划已确认：新增 `supports_json_schema` 开关、允许 kwargs 覆盖 model、修复 Judge 异常静默、新增 `--skip_judge` 参数
+- **Files created/modified:**
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## Session: 2026-04-15
+
 ### Phase 8: 运行优化与问题修复（框架搭建）
 - **Status:** pending（待跑测后根据具体问题填充）
 - **Actions taken:**

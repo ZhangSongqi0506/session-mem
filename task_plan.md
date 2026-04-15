@@ -187,12 +187,19 @@ Phase 7
   5. README 包含快速开始、环境配置、LoCoMo 复现命令
 
 ### Phase 8: 运行优化与问题修复
-- [ ] 解决服务器端到端跑测中发现的实际运行问题
-- [ ] 代码性能优化与健壮性增强
-- [ ] 根据跑测结果调整边界检测、Cell 生成或检索策略参数
-- [ ] 补充针对新发现问题的回归测试
+- [x] 定位服务器小样本跑测中的两个阻塞性问题（`json_schema` response_format 不兼容、`model` 参数冲突导致 Judge 静默失败）
+- [ ] 修复 `QwenClient` 对 `json_schema` response_format 的兼容性（新增 `supports_json_schema` 开关）
+- [ ] 修复 `QwenClient.chat_completion()` model 参数硬编码问题，支持调用方覆盖模型名
+- [ ] 修复 `metrics.py:judge_answer()` 异常静默捕获问题，增加日志输出
+- [ ] 在 `locomo_runner.py` 增加 `--skip_judge` 参数，提升评估灵活性
+- [ ] 补充上述修复的回归测试
+- [ ] 服务器重跑验证 Token 节省率恢复至 >= 40%
 - **涉及代码**:
-  - 待跑测后根据具体问题确定
+  - `src/session_mem/llm/qwen_client.py`
+  - `benchmarks/metrics.py`
+  - `benchmarks/locomo_runner.py`
+  - `tests/test_qwen_client.py`
+  - `tests/test_benchmark.py`
 - **验收标准**:
   1. LoCoMo 评估脚本在服务器上稳定跑通目标会话数
   2. 所有发现的问题均有对应的修复和回归测试

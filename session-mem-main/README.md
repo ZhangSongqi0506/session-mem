@@ -119,6 +119,10 @@ session-mem-main/
    - `avg_judge_score_vs_baseline`：相比全量历史的 LLM-as-Judge 平均评分
    - `avg_judge_score_vs_sliding`：相比滑窗基线的 LLM-as-Judge 平均评分
 
+### 服务器跑测注意事项
+- **LLM `response_format` 兼容性**：部分 vLLM/OneAPI 代理不支持 `json_schema` 类型的 `response_format`。`QwenClient` 默认 `supports_json_schema=False`，会自动跳过该参数，完全依赖 Prompt 约束 + `parser.py` fallback 解析 JSON。若你的后端明确支持 `json_schema`，可在初始化 `QwenClient` 时显式设置 `supports_json_schema=True`。
+- **Judge API 配置**：默认 Judge endpoint 为 `https://api2.aigcbest.top/v1`（`gpt-4o-mini`）。若服务器端无法访问该地址，可通过 `--judge_base_url` 指向其他可到达的 OpenAI 兼容接口（如内网 LLM），或使用 `--skip_judge` 在 `--run_accuracy` 模式下仅生成回答、不做 Judge 评分。
+
 ## 最新更新
 
 - **2026-04-14** 完成 Phase 4.1：语义边界检测支持**多切分点索引**（`[3, 6]`），一次检测可生成多个 Cell。全部 54 个测试通过。

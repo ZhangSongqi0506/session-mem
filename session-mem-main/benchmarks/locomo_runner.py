@@ -184,6 +184,11 @@ def main() -> None:
         "--run_accuracy", action="store_true", help="Run LLM answer + judge evaluation"
     )
     parser.add_argument(
+        "--skip_judge",
+        action="store_true",
+        help="Skip judge scoring even when --run_accuracy is set (only generate answers)",
+    )
+    parser.add_argument(
         "--sliding_window", type=int, default=10, help="Sliding window size (turns)"
     )
     parser.add_argument(
@@ -237,12 +242,18 @@ def main() -> None:
     )
 
     judge_client = None
-    if args.run_accuracy:
-        judge_client = QwenClient(
-            api_key=args.judge_api_key,
-            base_url=args.judge_base_url,
-            model=args.judge_model,
-        )
+    if args.run_accuracy and not args.skip_judge:
+        try:
+            judge_client = QwenClient(
+                api_key=args.judge_api_key,
+                base_url=args.judge_base_url,
+                model=args.judge_model,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Judge client initialization failed (%s). Accuracy evaluation will run without judge scoring.",
+                exc,
+            )
 
     all_qas: list[QAMetrics] = []
     for idx, session in enumerate(sessions):

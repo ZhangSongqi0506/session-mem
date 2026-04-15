@@ -66,9 +66,18 @@
 | `HybridSearcher.search()` 尚未实现 | 已在 Phase 5 完成：向量+关键词融合 + 低置信度 fallback |
 | `MetaCellGenerator` 尚未实现 | 已在 Phase 4 完成：初始生成 + 增量融合更新 |
 | LoCoMo 数据结构差异 | `locomo10.json` 中 conversation 含多个 session_x，已统一合并为单一会话；speaker_a→user、speaker_b→assistant；按 session 日期生成递增时间戳 |
+| 后端 LLM 不支持 `json_schema` response_format | 内网 vLLM/OneAPI 代理返回 `400 Bad Request`。修复方案：在 `QwenClient` 中新增 `supports_json_schema=False` 开关，跳过不兼容参数，完全依赖 Prompt + parser fallback |
+| `QwenClient.chat_completion()` model 硬编码与 `judge_answer()` 冲突 | `chat_completion()` 显式写死 `model=self.model`，而 `judge_answer()` 通过 kwargs 再传 `model=judge_model`，导致 `TypeError: got multiple values for keyword argument 'model'`，被 `except Exception: pass` 静默吞掉。修复方案：`model=kwargs.pop("model", self.model)`，允许覆盖 |
 
 ## Phase 8 Framework
 - **目标**：解决服务器端到端跑测中发现的实际运行问题，进行代码性能优化与健壮性增强
+- **已发现问题**：
+  1. LLM 后端不支持 `json_schema` response_format → Cell/Meta Cell 生成全部失败，Token 节省率仅 4.84%
+  2. `QwenClient.chat_completion()` model 参数硬编码 → `judge_answer()` 调用冲突，Judge 评分全为 0.0
+- **修复动作**：
+  - `qwen_client.py`：新增 `supports_json_schema` 开关 + 允许 `kwargs` 覆盖 `model`
+  - `metrics.py`：`judge_answer()` 异常处理改为 `logger.warning` 记录
+  - `locomo_runner.py`：新增 `--skip_judge` 参数
 - **待填充项**：
   1. LoCoMo 跑测后记录的具体问题列表
   2. 性能瓶颈分析与优化方案
