@@ -187,24 +187,23 @@ Phase 7
   5. README 包含快速开始、环境配置、LoCoMo 复现命令
 
 ### Phase 8: 运行优化与问题修复
-- [x] 定位服务器小样本跑测中的两个阻塞性问题（`json_schema` response_format 不兼容、`model` 参数冲突导致 Judge 静默失败）
-- [ ] 修复 `QwenClient` 对 `json_schema` response_format 的兼容性（新增 `supports_json_schema` 开关）
-- [ ] 修复 `QwenClient.chat_completion()` model 参数硬编码问题，支持调用方覆盖模型名
-- [ ] 修复 `metrics.py:judge_answer()` 异常静默捕获问题，增加日志输出
-- [ ] 在 `locomo_runner.py` 增加 `--skip_judge` 参数，提升评估灵活性
-- [ ] 补充上述修复的回归测试
-- [ ] 服务器重跑验证 Token 节省率恢复至 >= 40%
+- [x] 定位并修复服务器小样本跑测中的两个阻塞性问题（`json_schema` response_format 不兼容、`model` 参数冲突导致 Judge 静默失败）
+- [x] 服务器重跑 v2 验证：400 错误与 Judge 静默失败已解决
+- [ ] **评测结果增强**：扩展 `QAMetrics` 的 session-mem Token 拆解字段（Meta Cell / 热区 / 各激活 Cell）
+- [ ] **评测结果增强**：为 Baseline / Sliding / session-mem 三个回答各自增加 vs ground_truth 的独立 Judge 评分
+- [ ] **评测结果增强**：`locomo_runner.py` 输出详细的可读文本报告（`_report.txt`）
+- [ ] **评测结果增强**：补充回归测试
+- [ ] 基于增强后的详细评测数据，分析 Token 节省率过低（~10%）的根因并制定压缩/检索优化方案
 - **涉及代码**:
-  - `src/session_mem/llm/qwen_client.py`
+  - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
   - `benchmarks/locomo_runner.py`
-  - `tests/test_qwen_client.py`
   - `tests/test_benchmark.py`
 - **验收标准**:
-  1. LoCoMo 评估脚本在服务器上稳定跑通目标会话数
-  2. 所有发现的问题均有对应的修复和回归测试
-  3. 核心指标达到预期：Token 节省率 >= 40%，准确率损失 < 5%，TTFT < 200ms
-  4. 代码通过 black + ruff，全部单元测试通过
+  1. 每个 QA 的 JSON 结果包含 Meta Cell tokens、热区 tokens、激活 Cell 列表、三个回答的独立 Judge 分数
+  2. 运行后自动生成 `_report.txt` 文本报告，包含 per-QA 的 token 拆解与回答对比
+  3. 代码通过 black + ruff，全部单元测试通过
+  4. 基于详细数据定位 Token 节省率瓶颈，制定下阶段优化方案
 
 ## Key Questions
 1. ✅ 选择 Python 还是 Node.js 作为主要实现语言？ → **Python**

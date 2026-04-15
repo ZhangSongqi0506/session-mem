@@ -78,6 +78,11 @@
   - `qwen_client.py`：新增 `supports_json_schema` 开关 + 允许 `kwargs` 覆盖 `model`
   - `metrics.py`：`judge_answer()` 异常处理改为 `logger.warning` 记录
   - `locomo_runner.py`：新增 `--skip_judge` 参数
+- **服务器 v2 跑测结果（2026-04-15）**：
+  - 阻塞性问题已解决：0 次 400 Bad Request，Judge 请求正常发出并返回有效分数
+  - Token 节省率仍过低：vs baseline 仅 **10.73%**（目标 40%+）
+  - 现有输出过于简略，无法判断瓶颈是 Meta Cell、热区还是激活 Cell 过多
+  - 下一步：先增强评测结果的详细度（per-QA token 拆解、三个回答独立 Judge 评分、可读文本报告），再基于数据做精准优化
 - **待填充项**：
   1. LoCoMo 跑测后记录的具体问题列表
   2. 性能瓶颈分析与优化方案

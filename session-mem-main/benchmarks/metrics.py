@@ -34,6 +34,12 @@ class QAMetrics:
     session_mem_latency_ms: float = 0.0
     session_mem_answer: str = ""
 
+    # session-mem Token 拆解
+    session_mem_meta_cell_tokens: int = 0
+    session_mem_hot_zone_tokens: int = 0
+    session_mem_activated_cell_count: int = 0
+    session_mem_activated_cells: list[dict[str, Any]] = field(default_factory=list)
+
     # Token 节省率
     token_saving_rate_vs_baseline: float = 0.0
     token_saving_rate_vs_sliding: float = 0.0
@@ -41,6 +47,11 @@ class QAMetrics:
     # Judge 评分（session-mem vs 全量 / vs 滑窗）
     judge_score_vs_baseline: float | None = None
     judge_score_vs_sliding: float | None = None
+
+    # Judge 评分（各回答各自 vs ground_truth）
+    baseline_judge_score: float | None = None
+    sliding_judge_score: float | None = None
+    session_mem_judge_score: float | None = None
 
 
 @dataclass
@@ -93,10 +104,17 @@ class EvaluationResult:
                     "session_mem_tokens": q.session_mem_tokens,
                     "session_mem_latency_ms": q.session_mem_latency_ms,
                     "session_mem_answer": q.session_mem_answer,
+                    "session_mem_meta_cell_tokens": q.session_mem_meta_cell_tokens,
+                    "session_mem_hot_zone_tokens": q.session_mem_hot_zone_tokens,
+                    "session_mem_activated_cell_count": q.session_mem_activated_cell_count,
+                    "session_mem_activated_cells": q.session_mem_activated_cells,
                     "token_saving_rate_vs_baseline": q.token_saving_rate_vs_baseline,
                     "token_saving_rate_vs_sliding": q.token_saving_rate_vs_sliding,
                     "judge_score_vs_baseline": q.judge_score_vs_baseline,
                     "judge_score_vs_sliding": q.judge_score_vs_sliding,
+                    "baseline_judge_score": q.baseline_judge_score,
+                    "sliding_judge_score": q.sliding_judge_score,
+                    "session_mem_judge_score": q.session_mem_judge_score,
                 }
                 for q in self.qas
             ],
@@ -106,6 +124,57 @@ class EvaluationResult:
         Path(path).write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+    def save_text_report(self, path: str | Path) -> None:
+        """生成可读的 per-QA 文本报告。"""
+        lines: list[str] = []
+        lines.append("=" * 70)
+        lines.append("Session-mem LoCoMo Evaluation Report")
+        lines.append(f"Total QAs: {self.total_qas}")
+        lines.append(
+            f"Avg Token Saving vs Baseline: {self.avg_token_saving_rate_vs_baseline * 100:.2f}%"
+        )
+        lines.append(
+            f"Avg Token Saving vs Sliding: {self.avg_token_saving_rate_vs_sliding * 100:.2f}%"
+        )
+        lines.append(f"Avg session-mem Latency: {self.avg_session_mem_latency_ms:.2f} ms")
+        lines.append("=" * 70)
+        lines.append("")
+
+        for idx, q in enumerate(self.qas, start=1):
+            lines.append(f"--- QA {idx}/{self.total_qas} | {q.session_id} ---")
+            lines.append(f"Question: {q.question}")
+            lines.append(f"Ground Truth: {q.ground_truth}")
+            lines.append(f"Token Saving vs Baseline: {q.token_saving_rate_vs_baseline * 100:.2f}%")
+            lines.append(f"Token Saving vs Sliding: {q.token_saving_rate_vs_sliding * 100:.2f}%")
+            lines.append("")
+
+            lines.append("[Baseline]")
+            lines.append(f"  Tokens: {q.baseline_tokens} | Judge: {q.baseline_judge_score}")
+            lines.append(f"  Answer: {q.baseline_answer or '(empty)'}")
+            lines.append("")
+
+            lines.append("[Sliding]")
+            lines.append(f"  Tokens: {q.sliding_tokens} | Judge: {q.sliding_judge_score}")
+            lines.append(f"  Answer: {q.sliding_answer or '(empty)'}")
+            lines.append("")
+
+            lines.append("[session-mem]")
+            lines.append(f"  Tokens: {q.session_mem_tokens} | Judge: {q.session_mem_judge_score}")
+            lines.append(f"  Meta Cell: {q.session_mem_meta_cell_tokens} tokens")
+            lines.append(f"  Hot Zone: {q.session_mem_hot_zone_tokens} tokens")
+            lines.append(f"  Activated Cells ({q.session_mem_activated_cell_count}):")
+            for cell in q.session_mem_activated_cells:
+                lines.append(
+                    f"    - {cell.get('cell_id')} [{cell.get('cell_type')}] "
+                    f"{cell.get('token_count')} tokens: {cell.get('summary', '')}"
+                )
+            lines.append(f"  Answer: {q.session_mem_answer or '(empty)'}")
+            lines.append("")
+            lines.append("=" * 70)
+            lines.append("")
+
+        Path(path).write_text("\n".join(lines), encoding="utf-8")
 
 
 def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:

@@ -5,8 +5,24 @@
 
 ## Session: 2026-04-15
 
+### Phase 8: 运行优化与问题修复（小样本跑测 v2 结果与评测增强计划）
+- **Status:** in_progress（阻塞性问题已修复，Token 节省率仍不达标，先做评测增强）
+- **Actions taken:**
+  1. 完成服务器小样本 v2 跑测，总耗时约 23 分钟，产出 `locomo_quick_test_v2.json/log`
+  2. 验证两个阻塞性问题已修复：0 次 400 Bad Request，Judge 正常发出请求并返回有效分数
+  3. 新发现：Token 节省率仅 **10.73%**（vs baseline），远低于目标 40%+
+  4. 问题：现有评测输出过于简略，无法判断是 Meta Cell 过大、热区长、还是激活 Cell 过多导致的膨胀
+  5. 决定：先增强评测结果详细度（per-QA token 拆解、三个回答独立 Judge 评分、可读文本报告），再基于详细数据制定压缩/检索优化方案
+  6. 同步更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件
+- **Files created/modified:**
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## Session: 2026-04-15
+
 ### Phase 8: 运行优化与问题修复（小样本跑测问题定位与修复计划）
-- **Status:** in_progress（已定位根因，开始代码修复）
+- **Status:** complete（代码已修复并推送）
 - **Actions taken:**
   1. 完成服务器小样本跑测（`--max_sessions 2 --max_qa_per_session 2 --run_accuracy`），产出日志与结果文件
   2. 定位问题 1：LLM 后端（vLLM/OneAPI 代理）不支持 `json_schema` 类型的 `response_format`，导致 CellGenerator/MetaCellGenerator 全部 400 失败，Token 节省率仅 4.84%
@@ -14,6 +30,11 @@
   4. 制定修复计划并更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件
   5. 修复计划已确认：新增 `supports_json_schema` 开关、允许 kwargs 覆盖 model、修复 Judge 异常静默、新增 `--skip_judge` 参数
 - **Files created/modified:**
+  - `src/session_mem/llm/qwen_client.py`
+  - `benchmarks/metrics.py`
+  - `benchmarks/locomo_runner.py`
+  - `tests/test_qwen_client.py`
+  - `tests/test_benchmark.py`
   - `task_plan.md`
   - `findings.md`
   - `progress.md`

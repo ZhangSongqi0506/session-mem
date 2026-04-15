@@ -120,7 +120,24 @@ def run_session(
             sm_msgs = [{"role": "user", "content": question}]
 
         content = sm_msgs[0]["content"] if sm_msgs else ""
-        metrics.session_mem_tokens = TokenEstimator().estimate(content)
+        estimator = TokenEstimator()
+        metrics.session_mem_tokens = estimator.estimate(content)
+
+        # 拆解 session-mem Token 构成
+        if wm.meta_cell and wm.meta_cell.raw_text:
+            metrics.session_mem_meta_cell_tokens = estimator.estimate(wm.meta_cell.raw_text)
+        if wm.hot_zone:
+            metrics.session_mem_hot_zone_tokens = estimator.estimate("\n\n".join(wm.hot_zone))
+        metrics.session_mem_activated_cell_count = len(wm.activated_cells)
+        metrics.session_mem_activated_cells = [
+            {
+                "cell_id": cell.id,
+                "cell_type": cell.cell_type,
+                "summary": cell.summary or "",
+                "token_count": estimator.estimate(cell.raw_text or ""),
+            }
+            for cell in wm.activated_cells
+        ]
 
         if run_accuracy:
             metrics.session_mem_answer = _answer(llm_client, sm_msgs)
@@ -136,28 +153,75 @@ def run_session(
             ) / metrics.sliding_tokens
 
         # Judge 评分
-        if run_accuracy and judge_client and metrics.session_mem_answer:
+        if run_accuracy and judge_client:
+            # 三个回答各自 vs ground_truth
             if metrics.baseline_answer:
                 try:
-                    metrics.judge_score_vs_baseline = judge_answer(
+                    metrics.baseline_judge_score = judge_answer(
                         question=question,
                         ground_truth=ground_truth,
-                        candidate_answer=metrics.session_mem_answer,
+                        candidate_answer=metrics.baseline_answer,
                         judge_client=judge_client,
                     )
                 except Exception as exc:
-                    logger.warning("Judge vs baseline failed: %s", exc)
+                    logger.warning("Judge baseline vs ground_truth failed: %s", exc)
 
             if metrics.sliding_answer:
                 try:
-                    metrics.judge_score_vs_sliding = judge_answer(
+                    metrics.sliding_judge_score = judge_answer(
+                        question=question,
+                        ground_truth=ground_truth,
+                        candidate_answer=metrics.sliding_answer,
+                        judge_client=judge_client,
+                    )
+                except Exception as exc:
+                    logger.warning("Judge sliding vs ground_truth failed: %s", exc)
+
+            if metrics.session_mem_answer:
+                try:
+                    metrics.session_mem_judge_score = judge_answer(
                         question=question,
                         ground_truth=ground_truth,
                         candidate_answer=metrics.session_mem_answer,
                         judge_client=judge_client,
                     )
                 except Exception as exc:
-                    logger.warning("Judge vs sliding failed: %s", exc)
+                    logger.warning("Judge session-mem vs ground_truth failed: %s", exc)
+
+                # session-mem vs baseline / sliding（交叉对比）
+                if metrics.baseline_answer:
+                    try:
+                        metrics.judge_score_vs_baseline = judge_answer(
+                            question=question,
+                            ground_truth=metrics.baseline_answer,
+                            candidate_answer=metrics.session_mem_answer,
+                            judge_client=judge_client,
+                        )
+                    except Exception as exc:
+                        logger.warning("Judge vs baseline failed: %s", exc)
+
+                if metrics.sliding_answer:
+                    try:
+                        metrics.judge_score_vs_sliding = judge_answer(
+                            question=question,
+                            ground_truth=metrics.sliding_answer,
+                            candidate_answer=metrics.session_mem_answer,
+                            judge_client=judge_client,
+                        )
+                    except Exception as exc:
+                        logger.warning("Judge vs sliding failed: %s", exc)
+
+        logger.info(
+            "QA %s-%d | sm_tokens=%d (meta=%d hot_zone=%d cells=%d) | save_base=%.2f%% | save_slide=%.2f%%",
+            metrics.session_id,
+            metrics.question_id,
+            metrics.session_mem_tokens,
+            metrics.session_mem_meta_cell_tokens,
+            metrics.session_mem_hot_zone_tokens,
+            metrics.session_mem_activated_cell_count,
+            metrics.token_saving_rate_vs_baseline * 100,
+            metrics.token_saving_rate_vs_sliding * 100,
+        )
 
         results.append(metrics)
 
@@ -312,6 +376,10 @@ def main() -> None:
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     aggregate.save(args.output)
     logger.info("Results saved to %s", args.output)
+
+    report_path = Path(args.output).with_suffix(".txt")
+    aggregate.save_text_report(str(report_path))
+    logger.info("Text report saved to %s", report_path)
 
 
 if __name__ == "__main__":

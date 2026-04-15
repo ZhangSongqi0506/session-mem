@@ -331,3 +331,121 @@ def test_judge_answer_logs_exception_on_failure(caplog):
 
     assert score == 0.0
     assert "network down" in caplog.text
+
+
+def test_evaluation_result_text_report():
+    qas = [
+        QAMetrics(
+            session_id="s1",
+            question_id=0,
+            question="q1",
+            ground_truth="a1",
+            baseline_tokens=100,
+            session_mem_tokens=50,
+            token_saving_rate_vs_baseline=0.5,
+            token_saving_rate_vs_sliding=0.2,
+            session_mem_latency_ms=10.0,
+            session_mem_meta_cell_tokens=5,
+            session_mem_hot_zone_tokens=10,
+            session_mem_activated_cell_count=1,
+            session_mem_activated_cells=[
+                {
+                    "cell_id": "C_001",
+                    "cell_type": "fact",
+                    "summary": "test summary",
+                    "token_count": 35,
+                }
+            ],
+            baseline_judge_score=0.6,
+            sliding_judge_score=0.7,
+            session_mem_judge_score=0.8,
+        ),
+    ]
+    agg = compute_aggregate(qas)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+        path = f.name
+
+    agg.save_text_report(path)
+    text = Path(path).read_text(encoding="utf-8")
+    assert "Session-mem LoCoMo Evaluation Report" in text
+    assert "Meta Cell: 5 tokens" in text
+    assert "Hot Zone: 10 tokens" in text
+    assert "C_001 [fact] 35 tokens: test summary" in text
+    assert "Judge: 0.6" in text
+    assert "Judge: 0.7" in text
+    assert "Judge: 0.8" in text
+
+    Path(path).unlink()
+
+
+def test_run_session_detail_fields_exist():
+    from benchmarks.data_loader import LoCoMoSession
+
+    session = LoCoMoSession(
+        session_id="s1",
+        turns=[
+            {"role": "user", "content": "My name is Alice.", "timestamp": "2023-01-01T00:00:00Z"},
+            {
+                "role": "assistant",
+                "content": "Nice to meet you Alice.",
+                "timestamp": "2023-01-01T00:01:00Z",
+            },
+        ],
+        qa_list=[
+            {"question": "What is my name?", "answer": "Alice", "evidence": ["D1:1"]},
+        ],
+    )
+
+    llm = FakeLLMClient(response="Alice")
+    qas = run_session(
+        session,
+        llm_client=llm,
+        judge_client=None,
+        run_accuracy=False,
+        sliding_window_size=10,
+    )
+
+    assert len(qas) == 1
+    m = qas[0]
+    # 新字段应存在（即使值为 0）
+    assert hasattr(m, "session_mem_meta_cell_tokens")
+    assert hasattr(m, "session_mem_hot_zone_tokens")
+    assert hasattr(m, "session_mem_activated_cell_count")
+    assert hasattr(m, "session_mem_activated_cells")
+    assert isinstance(m.session_mem_activated_cells, list)
+
+
+def test_judge_all_three_answers():
+    call_log = []
+
+    class FakeJudge:
+        def chat_completion(self, messages, model, temperature):
+            call_log.append(messages[-1]["content"])
+            return "0.75"
+
+    q = QAMetrics(
+        session_id="s1",
+        question_id=0,
+        question="q",
+        ground_truth="gt",
+        baseline_answer="base ans",
+        sliding_answer="slide ans",
+        session_mem_answer="sm ans",
+    )
+
+    q.baseline_judge_score = judge_answer(
+        q.question, q.ground_truth, q.baseline_answer, FakeJudge()
+    )
+    q.sliding_judge_score = judge_answer(q.question, q.ground_truth, q.sliding_answer, FakeJudge())
+    q.session_mem_judge_score = judge_answer(
+        q.question, q.ground_truth, q.session_mem_answer, FakeJudge()
+    )
+
+    assert q.baseline_judge_score == 0.75
+    assert q.sliding_judge_score == 0.75
+    assert q.session_mem_judge_score == 0.75
+    assert len(call_log) == 3
+    assert "base ans" in call_log[0]
+    assert "slide ans" in call_log[1]
+    assert "sm ans" in call_log[2]
