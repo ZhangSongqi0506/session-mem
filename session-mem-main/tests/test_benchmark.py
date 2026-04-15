@@ -263,8 +263,9 @@ def test_compute_aggregate_with_qas():
             session_mem_latency_ms=10.0,
             baseline_latency_ms=5.0,
             sliding_latency_ms=3.0,
-            judge_score_vs_baseline=0.8,
-            judge_score_vs_sliding=0.9,
+            baseline_judge_score=0.8,
+            sliding_judge_score=0.6,
+            session_mem_judge_score=0.9,
         ),
         QAMetrics(
             session_id="s1",
@@ -278,8 +279,9 @@ def test_compute_aggregate_with_qas():
             session_mem_latency_ms=20.0,
             baseline_latency_ms=6.0,
             sliding_latency_ms=4.0,
-            judge_score_vs_baseline=0.7,
-            judge_score_vs_sliding=0.85,
+            baseline_judge_score=0.7,
+            sliding_judge_score=0.5,
+            session_mem_judge_score=0.85,
         ),
     ]
     agg = compute_aggregate(qas)
@@ -288,8 +290,9 @@ def test_compute_aggregate_with_qas():
     assert agg.avg_token_saving_rate_vs_sliding == 0.25
     assert agg.avg_session_mem_latency_ms == 15.0
     assert agg.median_session_mem_latency_ms == 15.0
-    assert agg.avg_judge_score_vs_baseline == 0.75
-    assert agg.avg_judge_score_vs_sliding == 0.875
+    assert agg.avg_baseline_judge_score == 0.75
+    assert agg.avg_sliding_judge_score == 0.55
+    assert agg.avg_session_mem_judge_score == 0.875
 
 
 def test_judge_answer_extracts_score():
@@ -375,6 +378,9 @@ def test_evaluation_result_text_report():
     assert "Judge: 0.6" in text
     assert "Judge: 0.7" in text
     assert "Judge: 0.8" in text
+    assert "Avg Baseline Judge: 0.600" in text
+    assert "Avg Sliding Judge: 0.700" in text
+    assert "Avg session-mem Judge: 0.800" in text
 
     Path(path).unlink()
 

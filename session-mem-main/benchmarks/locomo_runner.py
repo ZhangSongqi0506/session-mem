@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import logging
 import tempfile
 import time
@@ -281,6 +282,12 @@ def main() -> None:
         "--reuse_db", default=None, help="Reuse a single SQLite db path (for debug)"
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "--max_workers",
+        type=int,
+        default=1,
+        help="Max concurrent sessions to evaluate (default: 1). Ignored if --reuse_db is set.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -319,38 +326,75 @@ def main() -> None:
                 exc,
             )
 
-    all_qas: list[QAMetrics] = []
-    for idx, session in enumerate(sessions):
+    # 并发冲突保护：reuse_db 不支持多线程共享
+    max_workers = args.max_workers
+    if args.reuse_db and max_workers > 1:
+        logger.warning(
+            "--reuse_db is not compatible with --max_workers > 1. Falling back to max_workers=1."
+        )
+        max_workers = 1
+
+    def _evaluate_one(session):
         logger.info(
-            "Evaluating session %s (%d/%d), %d turns, %d QAs",
+            "Evaluating session %s, %d turns, %d QAs",
             session.session_id,
-            idx + 1,
-            len(sessions),
             session.turn_count,
             len(session.qa_list),
         )
-        try:
-            qas = run_session(
-                session,
-                llm_client=llm_client,
-                judge_client=judge_client,
-                run_accuracy=args.run_accuracy,
-                sliding_window_size=args.sliding_window,
-                db_path=args.reuse_db,
-            )
-            all_qas.extend(qas)
+        qas = run_session(
+            session,
+            llm_client=llm_client,
+            judge_client=judge_client,
+            run_accuracy=args.run_accuracy,
+            sliding_window_size=args.sliding_window,
+            db_path=args.reuse_db,
+        )
+        logger.info("Session %s complete: %d QAs evaluated", session.session_id, len(qas))
+        return qas
+
+    all_qas: list[QAMetrics] = []
+    completed = 0
+    if max_workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_session = {
+                executor.submit(_evaluate_one, session): session for session in sessions
+            }
+            for future in concurrent.futures.as_completed(future_to_session):
+                session = future_to_session[future]
+                try:
+                    qas = future.result()
+                    all_qas.extend(qas)
+                except Exception as exc:
+                    logger.error(
+                        "Failed to evaluate session %s: %s",
+                        session.session_id,
+                        exc,
+                        exc_info=args.verbose,
+                    )
+                completed += 1
+                logger.info("Progress: %d/%d sessions completed", completed, len(sessions))
+    else:
+        for idx, session in enumerate(sessions):
             logger.info(
-                "Session %s complete: %d QAs evaluated",
+                "Evaluating session %s (%d/%d), %d turns, %d QAs",
                 session.session_id,
-                len(qas),
+                idx + 1,
+                len(sessions),
+                session.turn_count,
+                len(session.qa_list),
             )
-        except Exception as exc:
-            logger.error(
-                "Failed to evaluate session %s: %s",
-                session.session_id,
-                exc,
-                exc_info=args.verbose,
-            )
+            try:
+                qas = _evaluate_one(session)
+                all_qas.extend(qas)
+            except Exception as exc:
+                logger.error(
+                    "Failed to evaluate session %s: %s",
+                    session.session_id,
+                    exc,
+                    exc_info=args.verbose,
+                )
+            completed += 1
+            logger.info("Progress: %d/%d sessions completed", completed, len(sessions))
 
     aggregate = compute_aggregate(all_qas)
     logger.info("=" * 60)
@@ -368,10 +412,12 @@ def main() -> None:
     logger.info("Avg session-mem latency: %.2f ms", aggregate.avg_session_mem_latency_ms)
     logger.info("Median session-mem latency: %.2f ms", aggregate.median_session_mem_latency_ms)
     logger.info("P95 session-mem latency: %.2f ms", aggregate.p95_session_mem_latency_ms)
-    if aggregate.avg_judge_score_vs_baseline is not None:
-        logger.info("Avg judge score vs baseline: %.3f", aggregate.avg_judge_score_vs_baseline)
-    if aggregate.avg_judge_score_vs_sliding is not None:
-        logger.info("Avg judge score vs sliding: %.3f", aggregate.avg_judge_score_vs_sliding)
+    if aggregate.avg_baseline_judge_score is not None:
+        logger.info("Avg baseline judge: %.3f", aggregate.avg_baseline_judge_score)
+    if aggregate.avg_sliding_judge_score is not None:
+        logger.info("Avg sliding judge: %.3f", aggregate.avg_sliding_judge_score)
+    if aggregate.avg_session_mem_judge_score is not None:
+        logger.info("Avg session-mem judge: %.3f", aggregate.avg_session_mem_judge_score)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     aggregate.save(args.output)

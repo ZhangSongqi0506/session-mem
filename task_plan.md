@@ -189,15 +189,15 @@ Phase 7
 ### Phase 8: 运行优化与问题修复
 - [x] 定位并修复服务器小样本跑测中的两个阻塞性问题（`json_schema` response_format 不兼容、`model` 参数冲突导致 Judge 静默失败）
 - [x] 服务器重跑 v2 验证：400 错误与 Judge 静默失败已解决
-- [ ] **评测结果增强**：扩展 `QAMetrics` 的 session-mem Token 拆解字段（Meta Cell / 热区 / 各激活 Cell）
-- [ ] **评测结果增强**：为 Baseline / Sliding / session-mem 三个回答各自增加 vs ground_truth 的独立 Judge 评分
-- [ ] **评测结果增强**：`locomo_runner.py` 输出详细的可读文本报告（`_report.txt`）
-- [ ] **评测结果增强**：补充回归测试
-- [ ] **评测效率优化**：为 `locomo_runner.py` 增加并发支持（当前 QA 级串行，可扩展到 per-QA 内多回答并发或跨 QA/session 并发），减少 benchmark 总耗时
+- [x] **评测结果增强**：扩展 `QAMetrics` 的 session-mem Token 拆解字段（Meta Cell / 热区 / 各激活 Cell）
+- [x] **评测结果增强**：为 Baseline / Sliding / session-mem 三个回答各自增加 vs ground_truth 的独立 Judge 评分
+- [x] **评测结果增强**：`locomo_runner.py` 输出详细的可读文本报告（`_report.txt`）
+- [x] **评测结果增强**：补充回归测试
+- [x] **评测效率优化**：为 `locomo_runner.py` 增加并发支持（`--max_workers` 跨 session 并发），减少 benchmark 总耗时
 - [x] 基于增强后的详细评测数据，分析 Token 节省率过低（~10%）的根因并制定压缩/检索优化方案
 - **新增待修复项**（2026-04-15 晚）
-  1. **评测聚合指标修正**：`benchmarks/metrics.py` 删除 `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`
-  2. **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
+  1. [x] **评测聚合指标修正**：`benchmarks/metrics.py` 删除 `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`
+  2. [ ] **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`

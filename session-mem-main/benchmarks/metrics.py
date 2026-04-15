@@ -72,8 +72,9 @@ class EvaluationResult:
     p95_session_mem_latency_ms: float = 0.0
 
     # Judge
-    avg_judge_score_vs_baseline: float | None = None
-    avg_judge_score_vs_sliding: float | None = None
+    avg_baseline_judge_score: float | None = None
+    avg_sliding_judge_score: float | None = None
+    avg_session_mem_judge_score: float | None = None
 
     qas: list[QAMetrics] = field(default_factory=list)
 
@@ -87,8 +88,9 @@ class EvaluationResult:
             "avg_session_mem_latency_ms": self.avg_session_mem_latency_ms,
             "median_session_mem_latency_ms": self.median_session_mem_latency_ms,
             "p95_session_mem_latency_ms": self.p95_session_mem_latency_ms,
-            "avg_judge_score_vs_baseline": self.avg_judge_score_vs_baseline,
-            "avg_judge_score_vs_sliding": self.avg_judge_score_vs_sliding,
+            "avg_baseline_judge_score": self.avg_baseline_judge_score,
+            "avg_sliding_judge_score": self.avg_sliding_judge_score,
+            "avg_session_mem_judge_score": self.avg_session_mem_judge_score,
             "qas": [
                 {
                     "session_id": q.session_id,
@@ -138,6 +140,12 @@ class EvaluationResult:
             f"Avg Token Saving vs Sliding: {self.avg_token_saving_rate_vs_sliding * 100:.2f}%"
         )
         lines.append(f"Avg session-mem Latency: {self.avg_session_mem_latency_ms:.2f} ms")
+        if self.avg_baseline_judge_score is not None:
+            lines.append(f"Avg Baseline Judge: {self.avg_baseline_judge_score:.3f}")
+        if self.avg_sliding_judge_score is not None:
+            lines.append(f"Avg Sliding Judge: {self.avg_sliding_judge_score:.3f}")
+        if self.avg_session_mem_judge_score is not None:
+            lines.append(f"Avg session-mem Judge: {self.avg_session_mem_judge_score:.3f}")
         lines.append("=" * 70)
         lines.append("")
 
@@ -202,11 +210,25 @@ def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
     p95_idx = int(total * 0.95)
     p95_sm_lat = sm_lats[min(p95_idx, total - 1)]
 
-    judge_base = [q.judge_score_vs_baseline for q in qas if q.judge_score_vs_baseline is not None]
-    judge_slide = [q.judge_score_vs_sliding for q in qas if q.judge_score_vs_sliding is not None]
+    baseline_judge_scores = [
+        q.baseline_judge_score for q in qas if q.baseline_judge_score is not None
+    ]
+    sliding_judge_scores = [q.sliding_judge_score for q in qas if q.sliding_judge_score is not None]
+    session_mem_judge_scores = [
+        q.session_mem_judge_score for q in qas if q.session_mem_judge_score is not None
+    ]
 
-    avg_judge_base = sum(judge_base) / len(judge_base) if judge_base else None
-    avg_judge_slide = sum(judge_slide) / len(judge_slide) if judge_slide else None
+    avg_baseline_judge = (
+        sum(baseline_judge_scores) / len(baseline_judge_scores) if baseline_judge_scores else None
+    )
+    avg_sliding_judge = (
+        sum(sliding_judge_scores) / len(sliding_judge_scores) if sliding_judge_scores else None
+    )
+    avg_session_mem_judge = (
+        sum(session_mem_judge_scores) / len(session_mem_judge_scores)
+        if session_mem_judge_scores
+        else None
+    )
 
     return EvaluationResult(
         total_qas=total,
@@ -217,8 +239,9 @@ def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
         avg_session_mem_latency_ms=avg_sm_lat,
         median_session_mem_latency_ms=median_sm_lat,
         p95_session_mem_latency_ms=p95_sm_lat,
-        avg_judge_score_vs_baseline=avg_judge_base,
-        avg_judge_score_vs_sliding=avg_judge_slide,
+        avg_baseline_judge_score=avg_baseline_judge,
+        avg_sliding_judge_score=avg_sliding_judge,
+        avg_session_mem_judge_score=avg_session_mem_judge,
         qas=qas,
     )
 

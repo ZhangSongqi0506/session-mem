@@ -18,10 +18,17 @@
      - Meta Cell `raw_text` 全文累积导致 11,578 tokens 膨胀（baseline 仅 13,800），是 Token 节省率仅 2.67% 的根因
      - 聚合指标 `avg_judge_score_vs_baseline` 并非用户所需，应替换为三个回答各自 vs ground_truth 的独立平均分
   8. 更新三个计划文件，将上述两点纳入 Phase 8 修复清单
+  9. 完成 **benchmark 并发优化**：`locomo_runner.py` 新增 `--max_workers` 参数，使用 `ThreadPoolExecutor` 实现跨 session 并发；增加 `--reuse_db` 与并发冲突保护
+  10. 完成 **评测聚合指标修正**：`metrics.py` 删除交叉对比指标，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`；同步更新 `locomo_runner.py` 日志输出与 `tests/test_benchmark.py` 回归测试
+  11. 全部 15 个 benchmark 回归测试通过；black + ruff 通过
+  12. Meta Cell 膨胀修复和激活 Cell 优化暂时搁置，待后续实施
 - **Files created/modified:**
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
+  - `benchmarks/locomo_runner.py`
+  - `benchmarks/metrics.py`
+  - `tests/test_benchmark.py`
 
 ## Session: 2026-04-15
 
