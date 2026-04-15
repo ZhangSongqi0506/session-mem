@@ -5,6 +5,19 @@
 
 ## Session: 2026-04-15
 
+### Phase 8: 运行优化与问题修复（框架搭建）
+- **Status:** pending（待跑测后根据具体问题填充）
+- **Actions taken:**
+  1. 在 `task_plan.md` 中新增 Phase 8 章节，明确该阶段目标：解决服务器端到端跑测中的实际运行问题、代码性能优化、根据跑测结果调参、补充回归测试
+  2. 同步更新 `findings.md` 和 `README.md` 的规划结构
+- **Files created/modified:**
+  - `task_plan.md`
+  - `findings.md`
+  - `README.md`
+  - `session-mem-main/README.md`
+
+## Session: 2026-04-15
+
 ### Phase 7: 验证与测试（适配真实数据 + 三向对比）
 - **Status:** in_progress（脚本已适配 LoCoMo 真实数据，待服务器跑测）
 - **Actions taken:**

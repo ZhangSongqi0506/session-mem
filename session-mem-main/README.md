@@ -83,6 +83,7 @@ session-mem-main/
 | Phase 5 | 已完成 | 检索策略与 Working Memory（查询重写、Hybrid Search、Meta Cell 前置） |
 | Phase 6 | 已完成 | 边界情况与异常处理（linked_prev 因果链、实体共现激活） |
 | Phase 7 | 进行中 | LoCoMo 验证与测试（benchmark 已适配真实数据，支持全量/滑窗/session-mem 三向对比，待跑测） |
+| Phase 8 | 框架已搭建 | 运行优化与问题修复（待服务器跑测后填充具体问题） |
 
 ## 技术栈
 

@@ -67,6 +67,14 @@
 | `MetaCellGenerator` 尚未实现 | 已在 Phase 4 完成：初始生成 + 增量融合更新 |
 | LoCoMo 数据结构差异 | `locomo10.json` 中 conversation 含多个 session_x，已统一合并为单一会话；speaker_a→user、speaker_b→assistant；按 session 日期生成递增时间戳 |
 
+## Phase 8 Framework
+- **目标**：解决服务器端到端跑测中发现的实际运行问题，进行代码性能优化与健壮性增强
+- **待填充项**：
+  1. LoCoMo 跑测后记录的具体问题列表
+  2. 性能瓶颈分析与优化方案
+  3. 参数调优记录（边界检测阈值、检索融合权重、Meta Cell 触发策略等）
+  4. 回归测试清单
+
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem
 - 技术方案文档：`单会话级临时记忆系统（Session-scoped Working Memory）技术方案.md`
