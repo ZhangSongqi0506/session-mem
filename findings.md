@@ -103,11 +103,14 @@
     - Q41 "What was Gina's favorite dancing memory?" → Baseline 正确（regionals competition），session-mem 回答 "没有明确提到"
     - Q42 "What kind of dance piece did Gina's team perform?" → Baseline 正确（"Finding Freedom"），session-mem 回答 "没有提及"
     - 共性：缺失的后期 Cell（如 C_020 关于 Gina 的舞蹈奖杯/比赛）未被召回，而 C_001/C_002 等通用 Cell 占用了激活名额
-- **待修复项**：
-  1. **检索精度优化**：降低高频通用实体的共现激活权重，或引入 Cell 与查询的相关性阈值过滤
-  2. **激活 Cell 去重/截断**：避免 6-7 个固定名额被无关背景 Cell 占满
-  3. 参数调优记录（边界检测阈值、检索融合权重、Meta Cell 触发策略等）
-  4. 回归测试清单
+- **待修复项（按优先级排序）**：
+  1. **P0 - 热区构建错误**：`_build_hot_zone()` 只取 SenMemBuffer 末尾 2 轮，但零压缩缓冲区的全部内容都应属于热区。导致热区 token 仅 32（预期约 400），最新上下文严重丢失。
+  2. **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 的实体共现激活无条件拉入 C_001（96%）、C_002（80%）、C_004（74.5%）等早期背景 Cell，挤占真正含答案的后期 Cell，是准确率从 0.511 → 0.358 的主因。
+  3. **P1 - 数据集角色映射失真**：`benchmarks/data_loader.py` 将 Jon/Gina 的对等对话强制映射为 `user`/`assistant`，把第三方对话硬套进人机助手范式。应保留原始 speaker 名称。
+  4. **P1 - 激活 Cell 缺少二次相关性截断**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` = 刚性 6-7 个 Cell，缺少统一按查询相关度重新排序和截断。
+  5. **P2 - 关键词匹配对通用词过于敏感**：Jaccard 匹配下 "dance"、"Jon"、"Gina" 等高频词几乎每个 Cell 都有，导致早期通用 Cell 获得虚高 keyword score。
+  6. **P2 - benchmark 流程中问题未进入热区**：`locomo_runner.py` 直接 `ms.retrieve_context(question)`，问题本身没有先入 SenMemBuffer，QueryRewriter 做指代消解时缺少当前问题上下文。
+  7. **P3 - Judge 阈值审视**：Baseline 自身 Judge 仅 0.511，部分 0 分案例可能并非完全错误，需抽样复核评估标准是否过严。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

@@ -198,8 +198,13 @@ Phase 7
 - **新增待修复项**（2026-04-15 晚）
   1. [x] **评测聚合指标修正**：`benchmarks/metrics.py` 删除 `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`
   2. [x] **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
-- **新增待修复项**（2026-04-15 benchmark 重跑后）
-  3. [ ] **检索精度优化**：`MemorySystem.retrieve_context()` 中实体共现激活机制召回大量无关通用 Cell（C_001/C_002/C_004 被激活 74-96%），导致特定后期 Cell 被挤出，准确率从 baseline 0.511 降至 0.358。需引入相关性阈值过滤或降低高频通用实体共现权重。
+- **新增待修复项**（2026-04-15 benchmark 重跑后，按优先级排序）
+  3. [ ] **P0 - 热区构建错误**：`_build_hot_zone()` 只取 SenMemBuffer 末尾 2 轮，但 SenMemBuffer 作为零压缩缓冲区，其全部内容都应属于热区。这导致最近上下文大量丢失，热区 token 仅 32（预期约 400）。
+  4. [ ] **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 中实体共现激活几乎每次都将 C_001（96%）、C_002（80%）、C_004（74.5%）等早期背景 Cell 拉入 Working Memory，挤占真正包含答案的特定后期 Cell 位置，是准确率下降的主因。
+  5. [ ] **P1 - 数据集角色映射失真**：`benchmarks/data_loader.py` 将 LoCoMo 中 Jon/Gina 的对等对话强制映射为 `user`/`assistant`，把第三方对话硬套进人机助手范式，可能扭曲检索与 Prompt 语义。应保留原始 speaker 名称。
+  6. [ ] **P1 - 激活 Cell 缺少二次相关性截断**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` = 刚性 6-7 个 Cell，缺少统一按查询相关度重新排序和截断的机制。
+  7. [ ] **P2 - 关键词匹配对通用词过于敏感**：Jaccard 匹配下 "dance"、"Jon"、"Gina" 等高频词几乎每个 Cell 都有，导致早期通用 Cell 获得虚高 keyword score。
+  8. [ ] **P2 - benchmark 流程中问题未进入热区**：`locomo_runner.py` 直接 `ms.retrieve_context(question)`，问题本身没有先入 SenMemBuffer，QueryRewriter 做指代消解时缺少当前问题上下文。
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
