@@ -197,7 +197,7 @@ Phase 7
 - [x] 基于增强后的详细评测数据，分析 Token 节省率过低（~10%）的根因并制定压缩/检索优化方案
 - **新增待修复项**（2026-04-15 晚）
   1. [x] **评测聚合指标修正**：`benchmarks/metrics.py` 删除 `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`
-  2. [ ] **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
+  2. [x] **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`

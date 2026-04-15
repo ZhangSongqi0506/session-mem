@@ -22,7 +22,7 @@ class MetaCellGenerator:
     def generate(
         self,
         session_id: str,
-        cell: MemoryCell,
+        cells: list[MemoryCell],
         previous_meta: MemoryCell | None = None,
         linked_cells: list[str] | None = None,
     ) -> MemoryCell:
@@ -30,18 +30,21 @@ class MetaCellGenerator:
 
         Args:
             session_id: 当前会话 ID。
-            cell: 用于生成/更新 Meta Cell 的普通 Cell（初始为首个 Cell，更新为最新 Cell）。
+            cells: 本次新产生的全部普通 Cell（1 个或多个）。
             previous_meta: 上一个版本的 Meta Cell，若为 None 则生成初始版本。
             linked_cells: 当前已关联的普通 Cell ID 列表。
 
         Returns:
             填充完整的 MemoryCell（cell_type='meta'）。
         """
-        if not cell:
-            raise ValueError("cell 不能为空")
+        if not cells:
+            raise ValueError("cells 不能为空")
 
-        cell_dict = cell.to_retrieval_dict()
-        cell_dict["raw_text"] = cell.raw_text
+        cell_dicts = []
+        for cell in cells:
+            d = cell.to_retrieval_dict()
+            d["raw_text"] = cell.raw_text
+            cell_dicts.append(d)
 
         prev_dict = None
         if previous_meta:
@@ -50,7 +53,7 @@ class MetaCellGenerator:
                 "raw_text": previous_meta.raw_text,
             }
 
-        messages = build_meta_cell_prompt(cell_dict, prev_dict)
+        messages = build_meta_cell_prompt(cell_dicts, prev_dict)
         try:
             response = self.llm.chat_completion(
                 messages,
@@ -75,24 +78,34 @@ class MetaCellGenerator:
 
         # Fallback
         if not summary:
-            summary = self._fallback_summary(cell, previous_meta)
+            summary = self._fallback_summary(cells, previous_meta)
         if not keywords:
-            keywords = list(dict.fromkeys(cell.keywords))[:8]
+            all_keywords = []
+            for c in cells:
+                all_keywords.extend(c.keywords or [])
+            keywords = list(dict.fromkeys(all_keywords))[:8]
         if not entities:
-            entities = list(dict.fromkeys(cell.entities))[:5]
+            all_entities = []
+            for c in cells:
+                all_entities.extend(c.entities or [])
+            entities = list(dict.fromkeys(all_entities))[:5]
 
-        # raw_text 累积保存历史上下文，确保增量更新不丢失信息
-        if previous_meta and previous_meta.raw_text:
-            raw_text = f"{previous_meta.raw_text}\n\n[Cell {cell.id}]\n{cell.raw_text}"
+        # Meta Cell 的 raw_text 必须存储 LLM 返回的 summary（全局摘要），不存任何原文拼接
+        if llm_summary:
+            raw_text = llm_summary
         else:
-            raw_text = f"[Cell {cell.id}]\n{cell.raw_text}"
+            raw_text = self._fallback_summary(cells, previous_meta)
 
         token_count = self.token_estimator.estimate(raw_text)
         confidence = 0.3 if llm_failed else float(data.get("confidence", 0.5))
 
         _linked_cells = list(linked_cells) if linked_cells else []
-        if cell.id not in _linked_cells:
-            _linked_cells.append(cell.id)
+        for c in cells:
+            if c.id not in _linked_cells:
+                _linked_cells.append(c.id)
+
+        first_cell = cells[0]
+        last_cell = cells[-1]
 
         return MemoryCell(
             id=meta_id,
@@ -104,9 +117,9 @@ class MetaCellGenerator:
             entities=entities,
             linked_prev=None,
             timestamp_start=(
-                cell.timestamp_start if not previous_meta else previous_meta.timestamp_start
+                first_cell.timestamp_start if not previous_meta else previous_meta.timestamp_start
             ),
-            timestamp_end=cell.timestamp_end,
+            timestamp_end=last_cell.timestamp_end,
             vector_id=None,
             token_count=token_count,
             raw_text=raw_text,
@@ -116,7 +129,8 @@ class MetaCellGenerator:
             linked_cells=_linked_cells,
         )
 
-    def _fallback_summary(self, cell: MemoryCell, previous_meta: MemoryCell | None) -> str:
+    def _fallback_summary(self, cells: list[MemoryCell], previous_meta: MemoryCell | None) -> str:
+        cell_summaries = " ".join([c.summary for c in cells if c.summary])
         if previous_meta and previous_meta.summary:
-            return f"{previous_meta.summary} {cell.summary}"[:300]
-        return cell.summary[:300]
+            return f"{previous_meta.summary} {cell_summaries}"
+        return cell_summaries

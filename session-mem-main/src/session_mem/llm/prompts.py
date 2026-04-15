@@ -155,24 +155,24 @@ META_CELL_SCHEMA = {
 
 
 def build_meta_cell_prompt(
-    cell: dict[str, Any],
+    cells: list[dict[str, Any]],
     previous_meta: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """构建 Meta Cell 生成的 prompt。
 
     Args:
-        cell: 用于生成/更新 Meta Cell 的普通 Cell（初始时为首个 Cell，更新时为最新 Cell）。
+        cells: 本次新产生的全部普通 Cell 字典列表（1 个或多个）。
         previous_meta: 上一个版本的 Meta Cell 字典，若为 None 则生成初始版本。
     """
-    cell_text = f"Cell (ID: {cell['id']}):\n{cell.get('raw_text', '')}"
+    cell_texts = "\n\n".join([f"Cell (ID: {c['id']}):\n{c.get('raw_text', '')}" for c in cells])
     if previous_meta:
         user_content = (
             f"已有 Meta Cell 全文:\n{previous_meta.get('raw_text', '')}\n\n"
-            f"最新普通 Cell:\n{cell_text}\n\n"
-            "请基于已有 Meta Cell 和最新 Cell，增量融合重写 Meta Cell JSON："
+            f"新产生的 Memory Cell 列表:\n{cell_texts}\n\n"
+            "请基于已有 Meta Cell 和上述新 Cell，增量融合重写 Meta Cell JSON："
         )
     else:
-        user_content = f"当前普通 Cell:\n{cell_text}\n\n请生成初始 Meta Cell JSON："
+        user_content = f"当前 Memory Cell 列表:\n{cell_texts}\n\n" "请生成初始 Meta Cell JSON："
     return [
         {"role": "system", "content": META_CELL_GENERATION_SYSTEM},
         {"role": "user", "content": user_content},

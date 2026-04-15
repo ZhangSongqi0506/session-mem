@@ -5,6 +5,27 @@
 
 ## Session: 2026-04-15
 
+### Phase 8: 运行优化与问题修复（Meta Cell 膨胀修复与批量更新落地）
+- **Status:** in_progress（Meta Cell 膨胀已修复，待服务器重跑验证）
+- **Actions taken:**
+  1. 重构 `MetaCellGenerator.generate()`：签名从 `cell: MemoryCell` 改为 `cells: list[MemoryCell]`，支持批量 Cell 输入
+  2. 修正 `raw_text` 赋值逻辑：优先使用 LLM 返回的 `summary`，fallback 时使用 Cell 摘要拼接，彻底消除全文累积导致的 11,578 tokens 膨胀
+  3. 更新 `build_meta_cell_prompt()`：支持 `list[dict]` 多 Cell 输入，Prompt 中列出每个 Cell 的 ID 和原文
+  4. 更新 `MemorySystem.add_turn()`：软限分支先收集全部新生成的 Cell，再一次性调用 `_update_meta_cell(new_cells)`，确保 LLM 能看到本次所有新 Cell
+  5. 更新 `MemorySystem._generate_cell()`：返回类型从 `None` 改为 `MemoryCell | None`，便于批量收集
+  6. 更新 `test_meta_cell_generator.py`：所有单测传入列表；新增 `test_batch_meta_cell_update` 验证批量更新行为
+  7. 更新 `test_memory_system.py`：适配 `CountingMetaGenerator` 新签名，断言 `linked_cells` 包含批量全部 Cell ID
+  8. 全部 102 个测试通过；black + ruff 通过
+  9. 下一步：服务器重跑 benchmark，验证 `_report.txt` 中 Meta Cell token 数降至合理范围，Token 节省率提升到 40% 以上
+- **Files created/modified:**
+  - `session-mem-main/src/session_mem/core/meta_cell_generator.py`
+  - `session-mem-main/src/session_mem/llm/prompts.py`
+  - `session-mem-main/src/session_mem/core/memory_system.py`
+  - `session-mem-main/tests/test_meta_cell_generator.py`
+  - `session-mem-main/tests/test_memory_system.py`
+
+## Session: 2026-04-15
+
 ### Phase 8: 运行优化与问题修复（小样本跑测 v2 结果与评测增强计划）
 - **Status:** in_progress（阻塞性问题已修复，Token 节省率根因已定位：Meta Cell 膨胀 + 聚合指标错误）
 - **Actions taken:**

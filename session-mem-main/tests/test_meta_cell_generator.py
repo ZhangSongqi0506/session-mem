@@ -37,7 +37,7 @@ def test_initial_meta_cell() -> None:
         entities=["北京"],
         raw_text="今天北京天气怎么样？",
     )
-    meta = gen.generate("s1", cell)
+    meta = gen.generate("s1", [cell])
 
     assert meta.cell_type == "meta"
     assert meta.id == "M_001"
@@ -45,6 +45,8 @@ def test_initial_meta_cell() -> None:
     assert meta.status == "active"
     assert meta.linked_cells == ["C_001"]
     assert meta.summary == "用户在询问天气"
+    # raw_text 应使用 LLM 返回的 summary，而非原文拼接
+    assert meta.raw_text == "用户在询问天气"
 
 
 def test_update_meta_cell() -> None:
@@ -76,13 +78,15 @@ def test_update_meta_cell() -> None:
         linked_cells=["C_001"],
         raw_text="用户询问北京天气",
     )
-    meta = gen.generate("s1", new_cell, previous_meta=previous_meta, linked_cells=["C_001"])
+    meta = gen.generate("s1", [new_cell], previous_meta=previous_meta, linked_cells=["C_001"])
 
     assert meta.id == "M_002"
     assert meta.version == 2
     assert meta.status == "active"
     assert meta.linked_cells == ["C_001", "C_002"]
     assert "行程" in meta.summary
+    # raw_text 应使用 LLM 返回的 summary
+    assert meta.raw_text == "用户计划北京行程，关注天气和交通"
 
 
 def test_meta_cell_fallback_on_llm_failure() -> None:
@@ -98,7 +102,7 @@ def test_meta_cell_fallback_on_llm_failure() -> None:
         entities=["ent1"],
         raw_text="...",
     )
-    meta = gen.generate("s1", cell)
+    meta = gen.generate("s1", [cell])
 
     assert meta.cell_type == "meta"
     assert meta.summary != ""
@@ -111,4 +115,56 @@ def test_meta_cell_empty_cell_raises() -> None:
     llm = MockLLM("{}")
     gen = MetaCellGenerator(llm)
     with pytest.raises(ValueError):
-        gen.generate("s1", None)  # type: ignore[arg-type]
+        gen.generate("s1", [])  # type: ignore[arg-type]
+
+
+def test_batch_meta_cell_update() -> None:
+    """验证传入 2 个 Cell 时，Prompt 包含两个 Cell 的 raw_text，且 linked_cells 正确。"""
+    captured_messages: list[list[dict[str, str]]] = []
+
+    class CaptureLLM(LLMClient):
+        def chat_completion(
+            self,
+            messages: list[dict[str, str]],
+            temperature: float = 0.3,
+            response_format: dict[str, str] | None = None,
+            **kwargs,
+        ) -> str:
+            captured_messages.append(messages)
+            return (
+                '{"summary": "批量测试摘要", "keywords": ["k1"], '
+                '"entities": ["e1"], "confidence": 0.8, "causal_deps": []}'
+            )
+
+    gen = MetaCellGenerator(CaptureLLM())
+    cell1 = MemoryCell(
+        id="C_001",
+        session_id="s1",
+        cell_type="fact",
+        confidence=0.9,
+        summary="摘要1",
+        keywords=["kw1"],
+        entities=["ent1"],
+        raw_text="原文1",
+    )
+    cell2 = MemoryCell(
+        id="C_002",
+        session_id="s1",
+        cell_type="fact",
+        confidence=0.9,
+        summary="摘要2",
+        keywords=["kw2"],
+        entities=["ent2"],
+        raw_text="原文2",
+    )
+
+    meta = gen.generate("s1", [cell1, cell2])
+
+    assert len(captured_messages) == 1
+    user_content = captured_messages[0][1]["content"]
+    assert "原文1" in user_content
+    assert "原文2" in user_content
+    assert "C_001" in user_content
+    assert "C_002" in user_content
+    assert meta.linked_cells == ["C_001", "C_002"]
+    assert meta.raw_text == "批量测试摘要"

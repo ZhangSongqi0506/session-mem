@@ -87,6 +87,10 @@
   1. **Meta Cell 严重膨胀**：每个 QA 的 Meta Cell 固定为 **11,578 tokens**，而 baseline 仅 13,800 tokens。根因为 `meta_cell_generator.py` 中 `raw_text` 被设为 `previous_meta.raw_text + cell.raw_text` 的累积拼接，而非 LLM 返回的简短 `summary`。
   2. **聚合指标错误**：`EvaluationResult` 输出的是 `avg_judge_score_vs_baseline` / `vs_sliding`（session-mem vs baseline/sliding 的交叉对比），但用户需要的是三个回答各自 vs ground_truth 的独立平均分。
   3. **激活 Cell 数量偏多**：每个 QA 平均激活 5-7 个 Cell，部分 Cell 与查询的直接相关性不高，存在进一步优化空间。
+- **Meta Cell 架构修正（2026-04-15）**：
+  1. `raw_text` 必须存储 LLM 返回的 `summary`（全局摘要），不存任何原文拼接。
+  2. 当一次切分产出 N 个 Cell 时，一次性把这 N 个 Cell 的原文 + 上一个 Meta Cell 摘要全部传给 LLM，只做 **1 次** Meta Cell 更新。
+  3. Meta Cell 摘要长度不人为截断，随会话内容自然增长，但绝非原始文本的堆砌。
 - **待填充项**：
   1. LoCoMo 跑测后记录的具体问题列表
   2. 性能瓶颈分析与优化方案

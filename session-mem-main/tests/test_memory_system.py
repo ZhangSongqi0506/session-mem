@@ -315,7 +315,7 @@ def test_soft_limit_multiple_splits_meta_cell_triggered_once() -> None:
     call_count = 0
 
     class CountingMetaGenerator(MetaCellGenerator):
-        def generate(self, session_id, cell, previous_meta=None, linked_cells=None):
+        def generate(self, session_id, cells, previous_meta=None, linked_cells=None):
             nonlocal call_count
             call_count += 1
             return MemoryCell(
@@ -327,7 +327,7 @@ def test_soft_limit_multiple_splits_meta_cell_triggered_once() -> None:
                 raw_text="meta text",
                 version=call_count,
                 status="active",
-                linked_cells=[cell.id],
+                linked_cells=[c.id for c in cells],
             )
 
     ms.meta_cell_generator = CountingMetaGenerator(MockLLM("CONTINUE"))
@@ -340,7 +340,7 @@ def test_soft_limit_multiple_splits_meta_cell_triggered_once() -> None:
     assert call_count == 1
     meta = meta_store.get_active_meta_cell("s1")
     assert meta is not None
-    assert meta.linked_cells == ["C_002"]
+    assert meta.linked_cells == ["C_001", "C_002"]
 
 
 def test_retrieve_context_includes_meta_cell() -> None:

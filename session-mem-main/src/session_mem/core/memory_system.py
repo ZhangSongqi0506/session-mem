@@ -75,13 +75,17 @@ class MemorySystem:
         # 1. 时间间隔强制切分
         if self.sen_buffer.gap_detected():
             cell_turns = self.sen_buffer.extract_for_cell(len(self.sen_buffer.turns))
-            self._generate_cell(cell_turns, fragmented=False)
+            cell = self._generate_cell(cell_turns, fragmented=False)
+            if cell and self.meta_cell_store is not None:
+                self._update_meta_cell([cell])
             return
 
         # 2. 硬上限强制切分
         if self.sen_buffer.is_hard_limit_reached():
             cell_turns = self.sen_buffer.extract_for_cell(len(self.sen_buffer.turns))
-            self._generate_cell(cell_turns, fragmented=True)
+            cell = self._generate_cell(cell_turns, fragmented=True)
+            if cell and self.meta_cell_store is not None:
+                self._update_meta_cell([cell])
             return
 
         # 3. 软限触发语义边界检测
@@ -89,12 +93,13 @@ class MemorySystem:
             split_indices = self.boundary_detector.should_split(self.sen_buffer.turns)
             if split_indices:
                 segments = self.sen_buffer.extract_segments(split_indices)
-                for i, segment in enumerate(segments):
-                    self._generate_cell(
-                        segment,
-                        fragmented=False,
-                        trigger_meta=(i == len(segments) - 1),
-                    )
+                new_cells: list[MemoryCell] = []
+                for segment in segments:
+                    cell = self._generate_cell(segment, fragmented=False)
+                    if cell:
+                        new_cells.append(cell)
+                if new_cells and self.meta_cell_store is not None:
+                    self._update_meta_cell(new_cells)
             return
 
     def retrieve_context(
@@ -170,9 +175,9 @@ class MemorySystem:
         )
         return wm
 
-    def _update_meta_cell(self, newest_cell: MemoryCell) -> None:
+    def _update_meta_cell(self, newest_cells: list[MemoryCell]) -> None:
         """触发 Meta Cell 的生成或增量融合更新。"""
-        if self.meta_cell_store is None:
+        if self.meta_cell_store is None or not newest_cells:
             return
         previous_meta = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
             self.session_id
@@ -180,7 +185,7 @@ class MemorySystem:
         linked_cells = list(previous_meta.linked_cells) if previous_meta else []
         meta_cell = self.meta_cell_generator.generate(
             self.session_id,
-            newest_cell,
+            newest_cells,
             previous_meta=previous_meta,
             linked_cells=linked_cells,
         )
@@ -208,12 +213,10 @@ class MemorySystem:
         self._cell_counter += 1
         return f"C_{self._cell_counter:03d}"
 
-    def _generate_cell(
-        self, turns: list[Turn], fragmented: bool = False, trigger_meta: bool = True
-    ) -> None:
+    def _generate_cell(self, turns: list[Turn], fragmented: bool = False) -> MemoryCell | None:
         """将提取的轮次生成 Cell 并持久化。"""
         if not turns:
-            return
+            return None
         cell_id = self._next_cell_id()
         cell = self.cell_generator.generate(
             turns,
@@ -237,7 +240,4 @@ class MemorySystem:
 
         self.short_buffer.add(cell)
         self._last_cell_id = cell.id
-
-        # Meta Cell 生成 / 更新（批量生成时仅触发最后一次）
-        if trigger_meta and self.meta_cell_store is not None:
-            self._update_meta_cell(cell)
+        return cell
