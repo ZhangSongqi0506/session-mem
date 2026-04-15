@@ -12,7 +12,7 @@
   2. 验证两个阻塞性问题已修复：0 次 400 Bad Request，Judge 正常发出请求并返回有效分数
   3. 新发现：Token 节省率仅 **10.73%**（vs baseline），远低于目标 40%+
   4. 问题：现有评测输出过于简略，无法判断是 Meta Cell 过大、热区长、还是激活 Cell 过多导致的膨胀
-  5. 决定：先增强评测结果详细度（per-QA token 拆解、三个回答独立 Judge 评分、可读文本报告），再基于详细数据制定压缩/检索优化方案
+  5. 决定：先增强评测结果详细度（per-QA token 拆解、三个回答独立 Judge 评分、可读文本报告），同时为 benchmark 增加并发支持（per-QA 多回答并发或跨 QA/session 并发），再基于详细数据制定压缩/检索优化方案
   6. 同步更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件
 - **Files created/modified:**
   - `task_plan.md`

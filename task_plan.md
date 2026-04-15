@@ -193,6 +193,7 @@ Phase 7
 - [ ] **评测结果增强**：为 Baseline / Sliding / session-mem 三个回答各自增加 vs ground_truth 的独立 Judge 评分
 - [ ] **评测结果增强**：`locomo_runner.py` 输出详细的可读文本报告（`_report.txt`）
 - [ ] **评测结果增强**：补充回归测试
+- [ ] **评测效率优化**：为 `locomo_runner.py` 增加并发支持（当前 QA 级串行，可扩展到 per-QA 内多回答并发或跨 QA/session 并发），减少 benchmark 总耗时
 - [ ] 基于增强后的详细评测数据，分析 Token 节省率过低（~10%）的根因并制定压缩/检索优化方案
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
