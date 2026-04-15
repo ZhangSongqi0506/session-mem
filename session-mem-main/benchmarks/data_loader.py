@@ -1,122 +1,141 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 class LoCoMoSession:
-    """表示一条 LoCoMo 拼接会话。"""
+    """表示一条 LoCoMo 拼接会话（多个原始 session 合并为一个长会话）。"""
 
     def __init__(
         self,
         session_id: str,
         turns: list[dict[str, str]],
-        question: str | None = None,
-        answer: str | None = None,
+        qa_list: list[dict[str, Any]],
     ):
         self.session_id = session_id
         self.turns = turns
-        self.question = question
-        self.answer = answer
+        self.qa_list = qa_list
 
     @property
     def turn_count(self) -> int:
         return len(self.turns)
 
 
+def _parse_session_datetime(date_str: str | None) -> datetime:
+    """从 LoCoMo 日期字符串解析为 datetime，失败时返回当前 UTC 时间。"""
+    if not date_str:
+        return datetime.now(timezone.utc)
+    # 常见格式: "7 May 2023" 或 "May 7, 2023"
+    for fmt in ("%d %B %Y", "%B %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(date_str.strip(), fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return datetime.now(timezone.utc)
+
+
+def _build_timestamp(session_dt: datetime, turn_index: int) -> str:
+    """为每个 turn 生成 ISO 8601 时间戳，同一 session 内按分钟递增。"""
+    dt = session_dt + timedelta(minutes=turn_index)
+    return dt.isoformat().replace("+00:00", "Z")
+
+
+def _normalize_role(speaker: str, speaker_a: str, speaker_b: str) -> str:
+    """将 speaker 名字归一化为 user/assistant。"""
+    speaker_norm = speaker.strip().lower()
+    if speaker_norm == speaker_a.strip().lower():
+        return "user"
+    if speaker_norm == speaker_b.strip().lower():
+        return "assistant"
+    # fallback：默认第一个说话人为 user
+    return "user"
+
+
 def load_locomo_sessions(
     data_path: str | Path,
     max_sessions: int | None = None,
     max_turns: int | None = None,
-    role_field: str = "role",
-    content_field: str = "content",
-    timestamp_field: str = "timestamp",
-    speaker_field: str | None = None,
-    text_field: str | None = None,
+    max_qa_per_session: int | None = None,
 ) -> list[LoCoMoSession]:
     """
-    从 JSON/JSONL 文件加载 LoCoMo 会话数据。
+    从 LoCoMo JSON 文件加载数据，将同一 conversation 的多个 session 合并为一个长会话。
 
-    支持两种格式：
-    1. JSON 数组：每个元素是一条 session
-    2. JSONL：每行是一条 session
-
-    每条 session 期望包含：
-    - session_id (str)
-    - turns (list[dict])，每个 turn 至少包含 role/content/timestamp
-    - 可选：question, answer
-
-    若原始数据使用 speaker/text 而非 role/content，可通过 speaker_field/text_field 指定。
+    Args:
+        data_path: LoCoMo JSON 文件路径（如 locomo10.json）
+        max_sessions: 最多加载多少个 conversation
+        max_turns: 每个合并会话最多保留多少轮对话
+        max_qa_per_session: 每个合并会话最多评估多少个 QA
     """
     path = Path(data_path)
     if not path.exists():
         raise FileNotFoundError(f"Data file not found: {path}")
 
-    raw_items: list[dict[str, Any]] = []
-    if path.suffix.lower() == ".jsonl":
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    raw_items.append(json.loads(line))
-    else:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, list):
-                raw_items = data
-            elif isinstance(data, dict) and "sessions" in data:
-                raw_items = data["sessions"]
-            else:
-                raw_items = [data]
+    with open(path, "r", encoding="utf-8") as f:
+        raw_data = json.load(f)
+
+    if not isinstance(raw_data, list):
+        raise ValueError("Expected a JSON array of conversations")
 
     sessions: list[LoCoMoSession] = []
-    for idx, item in enumerate(raw_items):
+    for conv_idx, item in enumerate(raw_data):
         if max_sessions is not None and len(sessions) >= max_sessions:
             break
 
-        sid = item.get("session_id") or item.get("id") or f"locomo_{idx}"
-        turns_raw = item.get("turns") or item.get("messages") or item.get("conversation") or []
-        if not turns_raw:
-            continue
+        sample_id = item.get("sample_id") or f"conv_{conv_idx}"
+        conversation = item.get("conversation", {})
+        qa_list = item.get("qa", [])
+
+        speaker_a = conversation.get("speaker_a", "SpeakerA")
+        speaker_b = conversation.get("speaker_b", "SpeakerB")
+
+        # 提取所有 session_x，按数字排序
+        session_keys = sorted(
+            [k for k in conversation.keys() if re.fullmatch(r"session_(\d+)", k)],
+            key=lambda k: int(k.split("_")[1]),
+        )
 
         turns: list[dict[str, str]] = []
-        for t in turns_raw:
-            role = t.get(role_field, "")
-            content = t.get(content_field, "")
-            timestamp = t.get(timestamp_field, "")
+        for session_key in session_keys:
+            session_turns = conversation.get(session_key, [])
+            if not isinstance(session_turns, list):
+                continue
 
-            # fallback: speaker -> role, text -> content
-            if not role and speaker_field:
-                role = t.get(speaker_field, "")
-            if not content and text_field:
-                content = t.get(text_field, "")
+            date_time_key = f"{session_key}_date_time"
+            date_str = conversation.get(date_time_key, "")
+            session_dt = _parse_session_datetime(date_str)
 
-            # normalize role
-            role = (role or "user").lower().strip()
-            if role in ("user", "human", "customer"):
-                role = "user"
-            elif role in ("assistant", "agent", "bot", "system"):
-                role = "assistant"
-
-            if content:
+            for turn_idx, turn in enumerate(session_turns):
+                text = turn.get("text", "")
+                if not text:
+                    continue
+                speaker = turn.get("speaker", speaker_a)
+                role = _normalize_role(speaker, speaker_a, speaker_b)
+                timestamp = _build_timestamp(session_dt, turn_idx)
                 turns.append(
                     {
                         "role": role,
-                        "content": content,
-                        "timestamp": timestamp or "",
+                        "content": text,
+                        "timestamp": timestamp,
                     }
                 )
 
         if max_turns is not None:
             turns = turns[:max_turns]
 
+        qa_subset = qa_list
+        if max_qa_per_session is not None:
+            qa_subset = qa_list[:max_qa_per_session]
+
         sessions.append(
             LoCoMoSession(
-                session_id=sid,
+                session_id=sample_id,
                 turns=turns,
-                question=item.get("question") or item.get("query"),
-                answer=item.get("answer") or item.get("ground_truth"),
+                qa_list=qa_subset,
             )
         )
 

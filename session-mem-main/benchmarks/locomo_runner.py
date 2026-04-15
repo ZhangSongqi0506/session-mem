@@ -14,17 +14,44 @@ from session_mem.storage.sqlite_backend import SQLiteBackend
 from session_mem.utils.tokenizer import TokenEstimator
 
 from benchmarks.data_loader import load_locomo_sessions
-from benchmarks.metrics import SessionMetrics, compute_aggregate, judge_answer
+from benchmarks.metrics import QAMetrics, compute_aggregate, judge_answer
 from benchmarks.prompt_assembler import PromptAssembler
 
 logger = logging.getLogger(__name__)
 
 
-def build_memory_system(session_id: str, db_path: str, llm_client: QwenClient) -> MemorySystem:
-    """为指定会话构建 MemorySystem 实例。"""
+def _answer(llm_client, messages: list[dict[str, str]]) -> str:
+    """调用 LLM 生成回答。"""
+    if not messages:
+        return ""
+    try:
+        resp = llm_client.chat_completion(messages=messages, temperature=0.3)
+        return resp.strip()
+    except Exception as exc:
+        logger.warning("LLM answer failed: %s", exc)
+        return ""
+
+
+def run_session(
+    session,
+    llm_client: QwenClient,
+    judge_client: QwenClient | None,
+    run_accuracy: bool,
+    sliding_window_size: int,
+    db_path: str | None = None,
+) -> list[QAMetrics]:
+    """评估单条合并会话：先全量写入 MemorySystem，再对每个 QA 跑三种方式对比。"""
+    assembler = PromptAssembler()
+
+    # 1. 初始化 MemorySystem 并逐轮写入
+    if db_path is None:
+        db_fd = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        db_path = db_fd.name
+        db_fd.close()
+
     backend = SQLiteBackend(db_path)
-    return MemorySystem(
-        session_id=session_id,
+    ms = MemorySystem(
+        session_id=session.session_id,
         llm_client=llm_client,
         vector_index=backend.vector_index,
         cell_store=backend.cell_store,
@@ -33,107 +60,131 @@ def build_memory_system(session_id: str, db_path: str, llm_client: QwenClient) -
         embedding_client=llm_client,
     )
 
-
-def run_session(
-    session,
-    llm_client: QwenClient,
-    judge_client: QwenClient | None,
-    run_accuracy: bool,
-    db_path: str | None = None,
-) -> SessionMetrics:
-    """评估单条 session：Token 节省率、延迟、可选准确率。"""
-    metrics = SessionMetrics(session_id=session.session_id)
-    assembler = PromptAssembler()
-
-    # 1. Baseline tokens
-    baseline_msgs, baseline_tokens = assembler.build_baseline(session.turns, query=session.question)
-    metrics.baseline_tokens = baseline_tokens
-
-    # 2. session-mem 逐轮写入
-    if db_path is None:
-        db_fd = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        db_path = db_fd.name
-        db_fd.close()
-
-    ms = build_memory_system(session.session_id, db_path, llm_client)
-
     for turn in session.turns:
         ms.add_turn(
             role=turn["role"],
             content=turn["content"],
-            timestamp=turn["timestamp"] or "2026-04-14T00:00:00Z",
+            timestamp=turn["timestamp"],
         )
 
-    # 3. 如果有问题，测量 retrieve_context 延迟和 token 数
-    query = session.question or ""
-    if query:
+    # 2. 对每个 QA 进行评估
+    results: list[QAMetrics] = []
+    for qa_idx, qa in enumerate(session.qa_list):
+        question = qa.get("question", "")
+        ground_truth = str(qa.get("answer", ""))
+        if not question:
+            continue
+
+        metrics = QAMetrics(
+            session_id=session.session_id,
+            question_id=qa_idx,
+            question=question,
+            ground_truth=ground_truth,
+        )
+
+        # --- 全量基线 ---
+        baseline_msgs, baseline_tokens = assembler.build_baseline(session.turns, query=question)
+        metrics.baseline_tokens = baseline_tokens
+
+        if run_accuracy:
+            start = time.perf_counter()
+            metrics.baseline_answer = _answer(llm_client, baseline_msgs)
+            metrics.baseline_latency_ms = (time.perf_counter() - start) * 1000
+        else:
+            # 不跑 LLM 时 latency 用 token 估算作为代理（或设为 0）
+            metrics.baseline_latency_ms = 0.0
+
+        # --- 滑窗基线 ---
+        slide_msgs, slide_tokens = assembler.build_sliding_window(
+            session.turns, query=question, window_size=sliding_window_size
+        )
+        metrics.sliding_tokens = slide_tokens
+
+        if run_accuracy:
+            start = time.perf_counter()
+            metrics.sliding_answer = _answer(llm_client, slide_msgs)
+            metrics.sliding_latency_ms = (time.perf_counter() - start) * 1000
+        else:
+            metrics.sliding_latency_ms = 0.0
+
+        # --- session-mem ---
         start = time.perf_counter()
-        wm = ms.retrieve_context(query, hot_zone_turns=2, top_k=2)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        metrics.retrieve_latency_ms = elapsed_ms
+        wm = ms.retrieve_context(question, hot_zone_turns=2, top_k=2)
+        metrics.session_mem_latency_ms = (time.perf_counter() - start) * 1000
 
-        prompt = wm.to_prompt()
-        content = prompt[0]["content"] if prompt else ""
+        sm_prompt = wm.to_prompt()
+        sm_msgs = list(sm_prompt)
+        if sm_msgs:
+            sm_msgs.append({"role": "user", "content": question})
+        else:
+            sm_msgs = [{"role": "user", "content": question}]
+
+        content = sm_msgs[0]["content"] if sm_msgs else ""
         metrics.session_mem_tokens = TokenEstimator().estimate(content)
-    else:
-        # 没有问题时，用 hot_zone + 全部 Cell 组装 prompt 做 token 对比
-        wm = ms.retrieve_context("", hot_zone_turns=2, top_k=2)
-        prompt = wm.to_prompt()
-        content = prompt[0]["content"] if prompt else ""
-        metrics.session_mem_tokens = TokenEstimator().estimate(content)
 
-    if metrics.baseline_tokens > 0:
-        metrics.token_saving_rate = (
-            metrics.baseline_tokens - metrics.session_mem_tokens
-        ) / metrics.baseline_tokens
+        if run_accuracy:
+            metrics.session_mem_answer = _answer(llm_client, sm_msgs)
 
-    # 4. 准确率评估
-    if run_accuracy and query and judge_client:
-        try:
-            baseline_resp = llm_client.chat_completion(messages=baseline_msgs, temperature=0.3)
-            metrics.baseline_answer = baseline_resp.strip()
-        except Exception as exc:
-            logger.warning("Baseline answer failed for %s: %s", session.session_id, exc)
-            metrics.baseline_answer = ""
+        # Token 节省率
+        if metrics.baseline_tokens > 0:
+            metrics.token_saving_rate_vs_baseline = (
+                metrics.baseline_tokens - metrics.session_mem_tokens
+            ) / metrics.baseline_tokens
+        if metrics.sliding_tokens > 0:
+            metrics.token_saving_rate_vs_sliding = (
+                metrics.sliding_tokens - metrics.session_mem_tokens
+            ) / metrics.sliding_tokens
 
-        try:
-            session_mem_msgs = wm.to_prompt()
-            if session_mem_msgs:
-                session_mem_msgs.append({"role": "user", "content": query})
-            else:
-                session_mem_msgs = [{"role": "user", "content": query}]
-            sm_resp = llm_client.chat_completion(messages=session_mem_msgs, temperature=0.3)
-            metrics.session_mem_answer = sm_resp.strip()
-        except Exception as exc:
-            logger.warning("Session-mem answer failed for %s: %s", session.session_id, exc)
-            metrics.session_mem_answer = ""
+        # Judge 评分
+        if run_accuracy and judge_client and metrics.session_mem_answer:
+            if metrics.baseline_answer:
+                try:
+                    metrics.judge_score_vs_baseline = judge_answer(
+                        question=question,
+                        ground_truth=ground_truth,
+                        candidate_answer=metrics.session_mem_answer,
+                        judge_client=judge_client,
+                    )
+                except Exception as exc:
+                    logger.warning("Judge vs baseline failed: %s", exc)
 
-        if session.answer and metrics.baseline_answer and metrics.session_mem_answer:
-            try:
-                metrics.judge_score = judge_answer(
-                    question=query,
-                    ground_truth=session.answer,
-                    baseline_answer=metrics.baseline_answer,
-                    session_mem_answer=metrics.session_mem_answer,
-                    judge_client=judge_client,
-                )
-            except Exception as exc:
-                logger.warning("Judge failed for %s: %s", session.session_id, exc)
+            if metrics.sliding_answer:
+                try:
+                    metrics.judge_score_vs_sliding = judge_answer(
+                        question=question,
+                        ground_truth=ground_truth,
+                        candidate_answer=metrics.session_mem_answer,
+                        judge_client=judge_client,
+                    )
+                except Exception as exc:
+                    logger.warning("Judge vs sliding failed: %s", exc)
 
-    ms.vector_index.conn.close()
-    return metrics
+        results.append(metrics)
+
+    backend.close()
+    return results
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="LoCoMo benchmark for session-mem")
-    parser.add_argument("--data_path", required=True, help="Path to LoCoMo JSON/JSONL file")
-    parser.add_argument("--max_sessions", type=int, default=None, help="Max sessions to evaluate")
-    parser.add_argument("--max_turns", type=int, default=None, help="Max turns per session")
+    parser.add_argument("--data_path", required=True, help="Path to LoCoMo JSON file")
+    parser.add_argument(
+        "--max_sessions", type=int, default=None, help="Max conversations to evaluate"
+    )
+    parser.add_argument(
+        "--max_turns", type=int, default=None, help="Max turns per merged conversation"
+    )
+    parser.add_argument(
+        "--max_qa_per_session", type=int, default=None, help="Max QA per conversation"
+    )
     parser.add_argument(
         "--output", default="benchmarks/results/locomo_results.json", help="Output JSON path"
     )
     parser.add_argument(
         "--run_accuracy", action="store_true", help="Run LLM answer + judge evaluation"
+    )
+    parser.add_argument(
+        "--sliding_window", type=int, default=10, help="Sliding window size (turns)"
     )
     parser.add_argument(
         "--llm_base_url", default="http://172.10.10.200/v1", help="Main LLM base URL"
@@ -172,8 +223,9 @@ def main() -> None:
         args.data_path,
         max_sessions=args.max_sessions,
         max_turns=args.max_turns,
+        max_qa_per_session=args.max_qa_per_session,
     )
-    logger.info("Loaded %d sessions from %s", len(sessions), args.data_path)
+    logger.info("Loaded %d merged sessions from %s", len(sessions), args.data_path)
 
     llm_client = QwenClient(
         api_key=args.llm_api_key,
@@ -192,40 +244,59 @@ def main() -> None:
             model=args.judge_model,
         )
 
-    results: list[SessionMetrics] = []
+    all_qas: list[QAMetrics] = []
     for idx, session in enumerate(sessions):
-        logger.info("Evaluating session %s (%d/%d)", session.session_id, idx + 1, len(sessions))
+        logger.info(
+            "Evaluating session %s (%d/%d), %d turns, %d QAs",
+            session.session_id,
+            idx + 1,
+            len(sessions),
+            session.turn_count,
+            len(session.qa_list),
+        )
         try:
-            sm = run_session(
+            qas = run_session(
                 session,
                 llm_client=llm_client,
                 judge_client=judge_client,
                 run_accuracy=args.run_accuracy,
+                sliding_window_size=args.sliding_window,
                 db_path=args.reuse_db,
             )
-            results.append(sm)
+            all_qas.extend(qas)
             logger.info(
-                "Session %s: baseline=%d tokens, session-mem=%d tokens, saving=%.2f%%, latency=%.2f ms",
+                "Session %s complete: %d QAs evaluated",
                 session.session_id,
-                sm.baseline_tokens,
-                sm.session_mem_tokens,
-                sm.token_saving_rate * 100,
-                sm.retrieve_latency_ms,
+                len(qas),
             )
         except Exception as exc:
             logger.error(
-                "Failed to evaluate session %s: %s", session.session_id, exc, exc_info=args.verbose
+                "Failed to evaluate session %s: %s",
+                session.session_id,
+                exc,
+                exc_info=args.verbose,
             )
 
-    aggregate = compute_aggregate(results)
+    aggregate = compute_aggregate(all_qas)
     logger.info("=" * 60)
-    logger.info("Evaluation complete: %d sessions", aggregate.total_sessions)
-    logger.info("Avg token saving rate: %.2f%%", aggregate.avg_token_saving_rate * 100)
-    logger.info("Avg retrieve latency: %.2f ms", aggregate.avg_retrieve_latency_ms)
-    logger.info("Median retrieve latency: %.2f ms", aggregate.median_retrieve_latency_ms)
-    logger.info("P95 retrieve latency: %.2f ms", aggregate.p95_retrieve_latency_ms)
-    if aggregate.avg_judge_score is not None:
-        logger.info("Avg judge score: %.3f", aggregate.avg_judge_score)
+    logger.info("Evaluation complete: %d QAs", aggregate.total_qas)
+    logger.info(
+        "Avg token saving rate vs baseline: %.2f%%",
+        aggregate.avg_token_saving_rate_vs_baseline * 100,
+    )
+    logger.info(
+        "Avg token saving rate vs sliding: %.2f%%",
+        aggregate.avg_token_saving_rate_vs_sliding * 100,
+    )
+    logger.info("Avg baseline latency: %.2f ms", aggregate.avg_baseline_latency_ms)
+    logger.info("Avg sliding latency: %.2f ms", aggregate.avg_sliding_latency_ms)
+    logger.info("Avg session-mem latency: %.2f ms", aggregate.avg_session_mem_latency_ms)
+    logger.info("Median session-mem latency: %.2f ms", aggregate.median_session_mem_latency_ms)
+    logger.info("P95 session-mem latency: %.2f ms", aggregate.p95_session_mem_latency_ms)
+    if aggregate.avg_judge_score_vs_baseline is not None:
+        logger.info("Avg judge score vs baseline: %.3f", aggregate.avg_judge_score_vs_baseline)
+    if aggregate.avg_judge_score_vs_sliding is not None:
+        logger.info("Avg judge score vs sliding: %.3f", aggregate.avg_judge_score_vs_sliding)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     aggregate.save(args.output)
