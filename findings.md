@@ -91,9 +91,21 @@
   1. `raw_text` 必须存储 LLM 返回的 `summary`（全局摘要），不存任何原文拼接。
   2. 当一次切分产出 N 个 Cell 时，一次性把这 N 个 Cell 的原文 + 上一个 Meta Cell 摘要全部传给 LLM，只做 **1 次** Meta Cell 更新。
   3. Meta Cell 摘要长度不人为截断，随会话内容自然增长，但绝非原始文本的堆砌。
-- **待填充项**：
-  1. LoCoMo 跑测后记录的具体问题列表
-  2. 性能瓶颈分析与优化方案
+- **服务器 v4 跑测结果（2026-04-15，Meta Cell 修复后）**：
+  - 数据集：`locomo_quick_test.json`，共 200 QA
+  - **Token 节省率 vs baseline：77.92%**（目标 40%+）✅
+  - **Meta Cell tokens**：平均 1033（最低 425，最高 1641），膨胀问题已彻底解决 ✅
+  - **准确率**：Baseline Judge 0.511，session-mem Judge **0.358**，差距 **0.153**，**未达标**（目标 <0.05）❌
+  - **session-mem Token 拆解**：Meta Cell 37.5%（1033t）+ Hot Zone 1.2%（32t）+ Activated Cells 61.3%（1688t）
+  - **激活 Cell 数量**：平均 6.8 个（Min 6, Max 7），但大量为通用背景 Cell
+  - **准确率下降根因**：实体共现激活机制几乎每次都把早期通用背景 Cell（C_001 被激活 96%，C_002 被激活 80%，C_004 被激活 74.5%）拉入 Working Memory，挤占了真正包含答案的特定后期 Cell 的位置
+  - **典型案例**：
+    - Q41 "What was Gina's favorite dancing memory?" → Baseline 正确（regionals competition），session-mem 回答 "没有明确提到"
+    - Q42 "What kind of dance piece did Gina's team perform?" → Baseline 正确（"Finding Freedom"），session-mem 回答 "没有提及"
+    - 共性：缺失的后期 Cell（如 C_020 关于 Gina 的舞蹈奖杯/比赛）未被召回，而 C_001/C_002 等通用 Cell 占用了激活名额
+- **待修复项**：
+  1. **检索精度优化**：降低高频通用实体的共现激活权重，或引入 Cell 与查询的相关性阈值过滤
+  2. **激活 Cell 去重/截断**：避免 6-7 个固定名额被无关背景 Cell 占满
   3. 参数调优记录（边界检测阈值、检索融合权重、Meta Cell 触发策略等）
   4. 回归测试清单
 

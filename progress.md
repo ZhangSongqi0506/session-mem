@@ -5,24 +5,30 @@
 
 ## Session: 2026-04-15
 
-### Phase 8: 运行优化与问题修复（Meta Cell 膨胀修复与批量更新落地）
-- **Status:** in_progress（Meta Cell 膨胀已修复，待服务器重跑验证）
+### Phase 8: 运行优化与问题修复（Meta Cell 膨胀修复后 benchmark 重跑与分析）
+- **Status:** in_progress（Meta Cell 修复验证成功，准确率差距成新瓶颈）
 - **Actions taken:**
   1. 重构 `MetaCellGenerator.generate()`：签名从 `cell: MemoryCell` 改为 `cells: list[MemoryCell]`，支持批量 Cell 输入
   2. 修正 `raw_text` 赋值逻辑：优先使用 LLM 返回的 `summary`，fallback 时使用 Cell 摘要拼接，彻底消除全文累积导致的 11,578 tokens 膨胀
   3. 更新 `build_meta_cell_prompt()`：支持 `list[dict]` 多 Cell 输入，Prompt 中列出每个 Cell 的 ID 和原文
-  4. 更新 `MemorySystem.add_turn()`：软限分支先收集全部新生成的 Cell，再一次性调用 `_update_meta_cell(new_cells)`，确保 LLM 能看到本次所有新 Cell
-  5. 更新 `MemorySystem._generate_cell()`：返回类型从 `None` 改为 `MemoryCell | None`，便于批量收集
-  6. 更新 `test_meta_cell_generator.py`：所有单测传入列表；新增 `test_batch_meta_cell_update` 验证批量更新行为
-  7. 更新 `test_memory_system.py`：适配 `CountingMetaGenerator` 新签名，断言 `linked_cells` 包含批量全部 Cell ID
-  8. 全部 102 个测试通过；black + ruff 通过
-  9. 下一步：服务器重跑 benchmark，验证 `_report.txt` 中 Meta Cell token 数降至合理范围，Token 节省率提升到 40% 以上
+  4. 更新 `MemorySystem.add_turn()`：软限分支先收集全部新生成的 Cell，再一次性调用 `_update_meta_cell(new_cells)`
+  5. 更新 `MemorySystem._generate_cell()`：返回类型从 `None` 改为 `MemoryCell | None`
+  6. 更新 `test_meta_cell_generator.py` 和 `test_memory_system.py`，新增批量更新测试
+  7. 全部 102 个测试通过；black + ruff 通过
+  8. **本地重跑 benchmark**（`locomo_quick_test.json`，200 QA），产出详细分析报告：
+     - **Token 节省率 vs baseline：77.92%**（目标 40%+），Meta Cell 平均降至 **1033 tokens**（最低 425）
+     - **准确率**：Baseline Judge 0.511，session-mem Judge **0.358**，差距 **0.153**，未达标（目标 <0.05）
+     - **激活 Cell 数量**：平均 **6.8 个**（Min 6, Max 7），但大量为低频通用 Cell（C_001 被激活 96%，C_002 被激活 80%）
+     - **准确率下降根因**：实体共现激活机制几乎每次都将早期通用背景 Cell（如 C_001 关于“Jon 失业、热爱舞蹈”）拉入 Working Memory，挤占了真正包含答案的特定后期 Cell 的位置
+     - 典型案例：Q41（Gina 最喜欢的舞蹈记忆）、Q42（Gina 团队获奖舞蹈名称）均因缺少对应 Cell 而回答错误，但 Baseline 正确
 - **Files created/modified:**
   - `session-mem-main/src/session_mem/core/meta_cell_generator.py`
   - `session-mem-main/src/session_mem/llm/prompts.py`
   - `session-mem-main/src/session_mem/core/memory_system.py`
   - `session-mem-main/tests/test_meta_cell_generator.py`
   - `session-mem-main/tests/test_memory_system.py`
+  - `benchmarks/results/locomo_quick_test.json`
+  - `benchmarks/results/locomo_quick_test.txt`
 
 ## Session: 2026-04-15
 
