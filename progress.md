@@ -6,7 +6,7 @@
 ## Session: 2026-04-15
 
 ### Phase 8: 运行优化与问题修复（小样本跑测 v2 结果与评测增强计划）
-- **Status:** in_progress（阻塞性问题已修复，Token 节省率仍不达标，先做评测增强）
+- **Status:** in_progress（阻塞性问题已修复，Token 节省率根因已定位：Meta Cell 膨胀 + 聚合指标错误）
 - **Actions taken:**
   1. 完成服务器小样本 v2 跑测，总耗时约 23 分钟，产出 `locomo_quick_test_v2.json/log`
   2. 验证两个阻塞性问题已修复：0 次 400 Bad Request，Judge 正常发出请求并返回有效分数
@@ -14,6 +14,10 @@
   4. 问题：现有评测输出过于简略，无法判断是 Meta Cell 过大、热区长、还是激活 Cell 过多导致的膨胀
   5. 决定：先增强评测结果详细度（per-QA token 拆解、三个回答独立 Judge 评分、可读文本报告），同时为 benchmark 增加并发支持（per-QA 多回答并发或跨 QA/session 并发），再基于详细数据制定压缩/检索优化方案
   6. 同步更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件
+  7. 服务器跑测 v3（增强版输出）分析完成，定位两个新问题：
+     - Meta Cell `raw_text` 全文累积导致 11,578 tokens 膨胀（baseline 仅 13,800），是 Token 节省率仅 2.67% 的根因
+     - 聚合指标 `avg_judge_score_vs_baseline` 并非用户所需，应替换为三个回答各自 vs ground_truth 的独立平均分
+  8. 更新三个计划文件，将上述两点纳入 Phase 8 修复清单
 - **Files created/modified:**
   - `task_plan.md`
   - `findings.md`

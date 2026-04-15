@@ -194,17 +194,22 @@ Phase 7
 - [ ] **评测结果增强**：`locomo_runner.py` 输出详细的可读文本报告（`_report.txt`）
 - [ ] **评测结果增强**：补充回归测试
 - [ ] **评测效率优化**：为 `locomo_runner.py` 增加并发支持（当前 QA 级串行，可扩展到 per-QA 内多回答并发或跨 QA/session 并发），减少 benchmark 总耗时
-- [ ] 基于增强后的详细评测数据，分析 Token 节省率过低（~10%）的根因并制定压缩/检索优化方案
+- [x] 基于增强后的详细评测数据，分析 Token 节省率过低（~10%）的根因并制定压缩/检索优化方案
+- **新增待修复项**（2026-04-15 晚）
+  1. **评测聚合指标修正**：`benchmarks/metrics.py` 删除 `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`
+  2. **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
   - `benchmarks/locomo_runner.py`
   - `tests/test_benchmark.py`
+  - `src/session_mem/core/meta_cell_generator.py`
 - **验收标准**:
   1. 每个 QA 的 JSON 结果包含 Meta Cell tokens、热区 tokens、激活 Cell 列表、三个回答的独立 Judge 分数
   2. 运行后自动生成 `_report.txt` 文本报告，包含 per-QA 的 token 拆解与回答对比
   3. 代码通过 black + ruff，全部单元测试通过
-  4. 基于详细数据定位 Token 节省率瓶颈，制定下阶段优化方案
+  4. `_report.txt` 中 Meta Cell token 数从 ~11,500 降至数百级别
+  5. Token 节省率 vs baseline 提升到 40% 以上
 
 ## Key Questions
 1. ✅ 选择 Python 还是 Node.js 作为主要实现语言？ → **Python**
