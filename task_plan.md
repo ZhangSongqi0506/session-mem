@@ -165,11 +165,12 @@ Phase 4.1
   2. 命中 Cell 包含实体"预算"时，系统级联加载同一会话中其他含"预算"实体的 Cell
 
 ### Phase 7: 验证与测试
-- [ ] 基于 LoCoMo 数据集的 session 拼接脚本与测试流水线
-- [ ] Token 节省率测算：对比全量历史 Prompt vs session-mem 组装后的 Prompt
-- [ ] 准确率评估：任务完成率 / LLM-as-Judge（gpt-4o-mini）评分
-- [ ] 核心模块单元测试与集成测试补全
-- [ ] 整理测试报告并更新 README
+- [x] 基于 LoCoMo 数据集的 session 拼接脚本与测试流水线
+- [x] Token 节省率测算：对比全量历史 Prompt vs session-mem 组装后的 Prompt
+- [x] 准确率评估：任务完成率 / LLM-as-Judge（gpt-4o-mini）评分
+- [x] 核心模块单元测试与集成测试补全
+- [x] 整理测试报告并更新 README
+- [ ] 跑通 LoCoMo 数据集（待用户传入数据后执行）
 - **涉及代码**:
   - `tests/test_buffer.py`（SenMemBuffer、ShortMemBuffer 测试）
   - `tests/test_boundary_detector.py`（边界检测测试）

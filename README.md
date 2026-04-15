@@ -29,8 +29,8 @@ session-mem/
 
 ## 当前状态
 
-- **Phase 1-3 已完成**：核心接口、存储层、语义边界检测已实现，28 个测试全部通过
-- **Phase 4 进行中**：Cell 生成、Meta Cell 与 ShortMemBuffer
+- **Phase 1-6 已完成**：核心接口、存储层、语义边界检测、Cell 生成、Meta Cell、检索策略、边界异常处理已全部落地，83 个测试通过
+- **Phase 7 进行中**：LoCoMo benchmark 脚本已就绪，待数据集跑测验证 Token 节省率、准确率与延迟
 
 ## 技术栈
 

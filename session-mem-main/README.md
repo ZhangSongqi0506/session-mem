@@ -73,9 +73,9 @@ session-mem-main/
 | Phase 3 | 已完成 | SenMemBuffer 实现与语义边界检测（gap / hard limit / soft limit） |
 | Phase 4 | 已完成 | Cell 生成、Meta Cell 与 ShortMemBuffer（44 个测试通过） |
 | Phase 4.1 | 已完成 | 多切分点语义边界检测落地：LLM 返回切分点索引列表，支持一次检测生成多个 Cell |
-| Phase 5 | 进行中 | 检索策略与 Working Memory |
-| Phase 6 | 待开始 | 边界情况与异常处理 |
-| Phase 7 | 待开始 | LoCoMo 验证与测试 |
+| Phase 5 | 已完成 | 检索策略与 Working Memory（查询重写、Hybrid Search、Meta Cell 前置） |
+| Phase 6 | 已完成 | 边界情况与异常处理（linked_prev 因果链、实体共现激活） |
+| Phase 7 | 进行中 | LoCoMo 验证与测试（benchmark 脚本已就绪，待数据集跑测） |
 
 ## 技术栈
 
@@ -84,10 +84,31 @@ session-mem-main/
 - qwen2.5:72b（语义边界检测 + Cell 生成）
 - OpenAI 兼容接口
 
-## 验证方法
+## LoCoMo 评估复现
 
-基于 LoCoMo 数据集，将同一 conversation 的多个 session 拼接为单一连续会话，评估 Token 节省率与回答准确率。
+1. 将 LoCoMo 数据文件放入 `benchmarks/data/`
+2. 运行评估脚本（仅 Token 节省率 + 延迟）：
+   ```bash
+   python benchmarks/locomo_runner.py \
+     --data_path benchmarks/data/locomo_sessions.jsonl \
+     --max_sessions 50 \
+     --output benchmarks/results/locomo_results.json
+   ```
+3. 运行完整评估（含 LLM 回答 + Judge 评分）：
+   ```bash
+   python benchmarks/locomo_runner.py \
+     --data_path benchmarks/data/locomo_sessions.jsonl \
+     --max_sessions 50 \
+     --run_accuracy \
+     --output benchmarks/results/locomo_results.json
+   ```
+4. 结果文件 `benchmarks/results/locomo_results.json` 包含：
+   - `avg_token_saving_rate`：平均 Token 节省率
+   - `avg_retrieve_latency_ms`：平均检索延迟
+   - `median_retrieve_latency_ms` / `p95_retrieve_latency_ms`：延迟分位值
+   - `avg_judge_score`：LLM-as-Judge 平均评分（启用 `--run_accuracy` 时）
 
 ## 最新更新
 
-- **2026-04-14** 完成 Phase 4.1：语义边界检测支持**多切分点索引**（`[3, 6]`），一次检测可生成多个 Cell，最后一段保留在 Buffer 继续累积。Meta Cell 更新在批量生成时仅触发 1 次。全部 54 个测试通过。
+- **2026-04-14** 完成 Phase 4.1：语义边界检测支持**多切分点索引**（`[3, 6]`），一次检测可生成多个 Cell。全部 54 个测试通过。
+- **2026-04-15** 完成 Phase 5-6：检索策略（Hybrid Search + Query Rewriter + Working Memory 组装）与边界异常处理（linked_prev 因果链、实体共现激活）全部落地，66 个测试通过。Phase 7 benchmark 脚本（`locomo_runner.py`、`data_loader.py`、`metrics.py`、`prompt_assembler.py`）已完成开发，待数据集验证。

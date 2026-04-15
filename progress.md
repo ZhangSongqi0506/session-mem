@@ -3,6 +3,30 @@
   WHAT: session-mem 项目的会话级进度日志
 -->
 
+## Session: 2026-04-15
+
+### Phase 7: 验证与测试（脚本开发完成）
+- **Status:** in_progress（脚本就绪，待数据集跑测）
+- **Actions taken:**
+  1. 创建 `benchmarks/` 目录结构：`data/`、`results/`、`locomo_runner.py`、`data_loader.py`、`metrics.py`、`prompt_assembler.py`
+  2. 实现 `data_loader.py`：支持 JSON/JSONL 格式，自动推断 `role`/`content`/`timestamp` 字段，兼容 speaker/text 别名
+  3. 实现 `prompt_assembler.py`：组装全量历史基线 Prompt，用于 Token 节省率对比
+  4. 实现 `metrics.py`：`SessionMetrics`、`EvaluationResult`、聚合计算、LLM-as-Judge 评分函数
+  5. 实现 `locomo_runner.py`：主评估脚本，支持命令行参数，逐 session 调用 `MemorySystem.add_turn()` + `retrieve_context()`，测量 Token 节省率、检索延迟（avg/median/P95），可选 `--run_accuracy` 触发 baseline / session-mem 回答生成与 Judge 评分
+  6. 补充测试：`tests/test_parser.py`（15 个测试，覆盖 safe_json_loads 全部 fallback 分支）、`tests/test_tokenizer.py`（2 个测试），parser 覆盖率从 52% 提升至 100%
+  7. 全部 83 个测试通过；black + ruff 通过；核心模块（buffer 93%、cell_generator 90%、retrieval 88-94%、storage 94%）均满足 > 60%
+  8. 更新 `README.md`、`session-mem-main/README.md`、`task_plan.md`：补充 LoCoMo 复现命令、当前状态
+- **Files created/modified:**
+  - `benchmarks/locomo_runner.py`
+  - `benchmarks/data_loader.py`
+  - `benchmarks/metrics.py`
+  - `benchmarks/prompt_assembler.py`
+  - `tests/test_parser.py`
+  - `tests/test_tokenizer.py`
+  - `README.md`
+  - `session-mem-main/README.md`
+  - `task_plan.md`
+
 ## Session: 2026-04-14
 
 ### Phase 6: 边界情况与异常处理
