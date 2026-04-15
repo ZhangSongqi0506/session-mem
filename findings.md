@@ -20,7 +20,8 @@
   - Working Memory：Meta Cell 全文 + 热区原文 + 命中 Cell 全文
 - 时间戳解析用于支持跨长时间会话的时序定位（30 分钟间隔作为切分信号）
 - 文档版本 v2.0 已通过预检审查，补充了验证方法、时间戳机制、存储与持久化设计（第 5 章）及 Meta Cell 设计（第 3.3 节）
-- **向量维度修正**：早期技术方案草稿写为 512 维，但实际采用 `bge-large-en-v1.5` 输出为 1024 维，`sqlite_backend.py` 默认值需要同步修正，否则会导致向量写入/检索维度不匹配
+- **向量维度修正**：早期技术方案草稿写为 512 维，但实际采用 `bge-large-en-v1.5` 输出为 1024 维，`sqlite_backend.py` 默认值已同步修正
+- **LoCoMo 评估设计**：每个 conversation 含 10-32 个 session，合并为单一长会话后 QA 数量可达 100+；评估粒度下沉到 QA 级，同时对比全量历史/滑窗/session-mem 三种方式的 Token 数、延迟、准确率
 
 ## Technical Decisions
 | Decision | Rationale |
@@ -37,6 +38,7 @@
 | 向量维度 1024 | 与 bge-large-en-v1.5 输出维度严格一致，消除维度不一致导致的运行时错误 |
 | ShortMemBuffer MVP 阶段不区分窗口 | 保证召回完整性，简化实现；未来会话 Cell >100 时再引入分级策略 |
 | Meta Cell（会话主旨单元）| 以少量额外 Token（约 400）换取全局主旨的确定性不丢，作为普通 Cell 检索的双保险 |
+| LoCoMo 评估采用 QA 级三向对比 | 同时对比全量历史、最近 N 轮滑窗、session-mem，精确测量 Token 节省率和准确率损失 |
 
 ## Architecture Notes
 ### 数据库 Schema 设计（SQLiteBackend）
@@ -61,8 +63,9 @@
 | 向量维度 512 vs 1024 不一致 | 技术方案 v2.0 和 AGENTS.md 已统一为 1024；`sqlite_backend.py` 已在 2026-04-14 热修复 |
 | sqlite-vec 扩展加载失败：`OperationalError: not authorized` | 在 `sqlite_vec.load(conn)` 前调用 `conn.enable_load_extension(True)` 解决 |
 | `SenMemBuffer.gap_detected()` 尚未实现 ISO 8601 解析 | 已在 Phase 3 实现：`datetime.fromisoformat` 解析含 `Z` 和时区偏移的字符串 |
-| `HybridSearcher.search()` 尚未实现 | 当前返回空列表占位，需在 Phase 5 补充向量+关键词融合逻辑 |
-| `MetaCellGenerator` 尚未实现 | 已创建 `meta_cell_generator.py` 占位模块，需在 Phase 4 补充 LLM 融合逻辑 |
+| `HybridSearcher.search()` 尚未实现 | 已在 Phase 5 完成：向量+关键词融合 + 低置信度 fallback |
+| `MetaCellGenerator` 尚未实现 | 已在 Phase 4 完成：初始生成 + 增量融合更新 |
+| LoCoMo 数据结构差异 | `locomo10.json` 中 conversation 含多个 session_x，已统一合并为单一会话；speaker_a→user、speaker_b→assistant；按 session 日期生成递增时间戳 |
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

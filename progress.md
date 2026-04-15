@@ -5,6 +5,28 @@
 
 ## Session: 2026-04-15
 
+### Phase 7: 验证与测试（适配真实数据 + 三向对比）
+- **Status:** in_progress（脚本已适配 LoCoMo 真实数据，待服务器跑测）
+- **Actions taken:**
+  1. 分析真实 `locomo10.json` 结构：`conversation` 下含多个 `session_x` 和 `session_x_date_time`，`qa` 数组含问题、标准答案与 `evidence` 证据链
+  2. 重构 `data_loader.py`：将同一 conversation 的所有 session 按顺序合并为单一长会话；自动归一化 `speaker_a`→`user`、`speaker_b`→`assistant`；基于 session 日期为每个 turn 生成递增 ISO 时间戳
+  3. 重构 `prompt_assembler.py`：新增 `build_sliding_window()`，支持最近 N 轮对话作为滑窗基线
+  4. 重构 `metrics.py`：评估粒度从 session 级下沉到 **QA 级**，同时记录全量/滑窗/session-mem 三者的 token 数、延迟、回答、Judge 评分
+  5. 重构 `locomo_runner.py`：流程改为"先全量 add_turn 写入 MemorySystem，再对每个 QA 分别跑全量/滑窗/session-mem 三种方式"；新增 `--sliding_window` 参数；输出 `token_saving_rate_vs_baseline` 与 `token_saving_rate_vs_sliding`
+  6. 新建 `tests/test_benchmark.py`：11 个测试覆盖数据加载、全量/滑窗 Prompt 组装、三向对比集成、聚合指标、Judge 评分
+  7. 全部 94 个测试通过；black + ruff 通过；核心模块覆盖率均 > 60%
+  8. 同步更新 `task_plan.md`、`findings.md`、两个 `README.md`
+- **Files created/modified:**
+  - `benchmarks/locomo_runner.py`
+  - `benchmarks/data_loader.py`
+  - `benchmarks/metrics.py`
+  - `benchmarks/prompt_assembler.py`
+  - `tests/test_benchmark.py`
+  - `README.md`
+  - `session-mem-main/README.md`
+  - `task_plan.md`
+  - `findings.md`
+
 ### Phase 7: 验证与测试（脚本开发完成）
 - **Status:** in_progress（脚本就绪，待数据集跑测）
 - **Actions taken:**

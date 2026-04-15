@@ -59,6 +59,13 @@ session-mem-main/
 │   ├── integrations/         # LangChain / MCP 适配（预留）
 │   └── utils/                # 工具函数
 ├── tests/                    # 单元测试与集成测试
+├── benchmarks/               # LoCoMo 评估脚本
+│   ├── data/                 # 数据集
+│   ├── results/              # 评估结果
+│   ├── locomo_runner.py
+│   ├── data_loader.py
+│   ├── metrics.py
+│   └── prompt_assembler.py
 └── pyproject.toml            # 项目配置
 ```
 
@@ -71,11 +78,11 @@ session-mem-main/
 | Phase 1 | 已完成 | 项目脚手架与核心接口设计 |
 | Phase 2 | 已完成 | 存储层完善与数据库构建（SQLite + sqlite-vec，5 张表，1024 维向量） |
 | Phase 3 | 已完成 | SenMemBuffer 实现与语义边界检测（gap / hard limit / soft limit） |
-| Phase 4 | 已完成 | Cell 生成、Meta Cell 与 ShortMemBuffer（44 个测试通过） |
+| Phase 4 | 已完成 | Cell 生成、Meta Cell 与 ShortMemBuffer |
 | Phase 4.1 | 已完成 | 多切分点语义边界检测落地：LLM 返回切分点索引列表，支持一次检测生成多个 Cell |
 | Phase 5 | 已完成 | 检索策略与 Working Memory（查询重写、Hybrid Search、Meta Cell 前置） |
 | Phase 6 | 已完成 | 边界情况与异常处理（linked_prev 因果链、实体共现激活） |
-| Phase 7 | 进行中 | LoCoMo 验证与测试（benchmark 脚本已就绪，待数据集跑测） |
+| Phase 7 | 进行中 | LoCoMo 验证与测试（benchmark 已适配真实数据，支持全量/滑窗/session-mem 三向对比，待跑测） |
 
 ## 技术栈
 
@@ -87,28 +94,32 @@ session-mem-main/
 ## LoCoMo 评估复现
 
 1. 将 LoCoMo 数据文件放入 `benchmarks/data/`
-2. 运行评估脚本（仅 Token 节省率 + 延迟）：
+2. 运行评估脚本（仅 Token 节省率 + 延迟，三向对比）：
    ```bash
    python benchmarks/locomo_runner.py \
-     --data_path benchmarks/data/locomo_sessions.jsonl \
-     --max_sessions 50 \
+     --data_path benchmarks/data/locomo10.json \
+     --max_sessions 10 \
+     --sliding_window 10 \
      --output benchmarks/results/locomo_results.json
    ```
 3. 运行完整评估（含 LLM 回答 + Judge 评分）：
    ```bash
    python benchmarks/locomo_runner.py \
-     --data_path benchmarks/data/locomo_sessions.jsonl \
-     --max_sessions 50 \
+     --data_path benchmarks/data/locomo10.json \
+     --max_sessions 10 \
+     --sliding_window 10 \
      --run_accuracy \
      --output benchmarks/results/locomo_results.json
    ```
 4. 结果文件 `benchmarks/results/locomo_results.json` 包含：
-   - `avg_token_saving_rate`：平均 Token 节省率
-   - `avg_retrieve_latency_ms`：平均检索延迟
-   - `median_retrieve_latency_ms` / `p95_retrieve_latency_ms`：延迟分位值
-   - `avg_judge_score`：LLM-as-Judge 平均评分（启用 `--run_accuracy` 时）
+   - `avg_token_saving_rate_vs_baseline`：相比**全量历史**的平均 Token 节省率
+   - `avg_token_saving_rate_vs_sliding`：相比**滑窗基线**的平均 Token 节省率
+   - `avg_session_mem_latency_ms` / `median_session_mem_latency_ms` / `p95_session_mem_latency_ms`：session-mem 检索延迟
+   - `avg_judge_score_vs_baseline`：相比全量历史的 LLM-as-Judge 平均评分
+   - `avg_judge_score_vs_sliding`：相比滑窗基线的 LLM-as-Judge 平均评分
 
 ## 最新更新
 
 - **2026-04-14** 完成 Phase 4.1：语义边界检测支持**多切分点索引**（`[3, 6]`），一次检测可生成多个 Cell。全部 54 个测试通过。
-- **2026-04-15** 完成 Phase 5-6：检索策略（Hybrid Search + Query Rewriter + Working Memory 组装）与边界异常处理（linked_prev 因果链、实体共现激活）全部落地，66 个测试通过。Phase 7 benchmark 脚本（`locomo_runner.py`、`data_loader.py`、`metrics.py`、`prompt_assembler.py`）已完成开发，待数据集验证。
+- **2026-04-15 上午** 完成 Phase 5-6：检索策略与边界异常处理全部落地，83 个测试通过。
+- **2026-04-15 下午** 完成 Phase 7 benchmark 开发：适配真实 `locomo10.json` 数据结构，将多个 session 合并为单一长会话，支持**全量历史/滑窗/session-mem 三向对比**（Token 数、延迟、准确率）。新增 `tests/test_benchmark.py`（11 个测试），全部 94 个测试通过，待服务器跑测。

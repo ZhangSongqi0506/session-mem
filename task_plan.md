@@ -8,7 +8,7 @@
 实现 `session-mem` 单会话级临时记忆系统的 MVP，包含三层缓冲架构、Cell 生成与检索、时间戳解析、SQLite + sqlite-vec 存储，并通过 LoCoMo 拼接会话完成基准验证。
 
 ## Current Phase
-Phase 4.1
+Phase 7
 
 ## Phases
 
@@ -170,7 +170,8 @@ Phase 4.1
 - [x] 准确率评估：任务完成率 / LLM-as-Judge（gpt-4o-mini）评分
 - [x] 核心模块单元测试与集成测试补全
 - [x] 整理测试报告并更新 README
-- [ ] 跑通 LoCoMo 数据集（待用户传入数据后执行）
+- [x] 跑通 LoCoMo 数据集脚本开发（已支持全量/滑窗/session-mem 三向对比）
+- [ ] 服务器端到端跑测并产出 Token 节省率、准确率、延迟报告
 - **涉及代码**:
   - `tests/test_buffer.py`（SenMemBuffer、ShortMemBuffer 测试）
   - `tests/test_boundary_detector.py`（边界检测测试）
