@@ -24,26 +24,22 @@
   - `tests/test_retrieval.py`
 - **Next step:** 进入 Phase 8.7 时序信息闭环优化，或先跑服务器 benchmark 验证 BM25 对准确率的提升效果。
 
-### Phase 8.7: 时序信息闭环优化（计划已确立）
-- **Status:** pending（计划已写入三个计划文件，待执行）
+### Phase 8.7: 时序信息闭环优化
+- **Status:** complete（代码已修改、测试通过）
 - **Actions taken:**
-  1. 排查 `memory_system.py:retrieve_context()` 的 `activated_cells` 组装逻辑：当前按 RRF 分数降序排列（`activated.sort(key=lambda c: score_map.get(c.id, 0.0), reverse=True)`），与时间先后顺序无关。
-  2. 排查 `working_memory.py:to_prompt()`：仅拼接 `cell.raw_text`，完全未带上 `timestamp_start`/`timestamp_end`。
-  3. 确认问题影响：
-     - 叙事顺序被打乱，高分通用背景 Cell 前置可能淹没具体答案 Cell；
-     - `linked_prev` 因果链被重排后失去自然递进关系；
-     - LLM 无法回答 "When did..." 类问题，因为 Prompt 中没有时间锚点。
-  4. 制定三点修复方案并写入计划文件：
-     1. `memory_system.py`：筛选后改按 `timestamp_start` 升序排列 `activated_cells`。
-     2. `working_memory.py`：给每个 Cell 的 `raw_text` 前增加 `[timestamp_start - timestamp_end]\n` 前缀。
-     3. `locomo_runner.py`：system 指令追加 `"If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."`。
+  1. 修改 `src/session_mem/core/memory_system.py`：将 `retrieve_context()` 中 `activated_cells` 的最终排序从 RRF 分数降序改为 `timestamp_start` 升序（None 值放最后），恢复自然叙事时间线。
+  2. 修改 `src/session_mem/core/working_memory.py`：在 `to_prompt()` 中给每个带时间戳的 `activated_cell` 的 `raw_text` 前增加 `[timestamp_start - timestamp_end]\n` 前缀，为 LLM 提供绝对时间锚点。
+  3. 修改 `benchmarks/locomo_runner.py`：在 `ANSWER_INSTRUCTION` 末尾追加 `"If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."`，强制时间类问题回答绝对时间。
+  4. 更新 `tests/test_retrieval.py`：
+     - 新增 `test_retrieve_context_sorts_activated_cells_by_timestamp`：构造两个 timestamp 不同的 Cell，验证返回的 `activated_cells` 按时间升序排列。
+     - 新增 `test_working_memory_includes_timestamp_prefix`：验证 `WorkingMemory.to_prompt()` 输出包含 `[timestamp_start - timestamp_end]` 前缀。
+  5. 运行验证：全部 **106 个测试通过**；`black` + `ruff` 通过。
 - **涉及文件:**
   - `src/session_mem/core/memory_system.py`
   - `src/session_mem/core/working_memory.py`
   - `benchmarks/locomo_runner.py`
-  - `tests/test_memory_system.py`
   - `tests/test_retrieval.py`
-- **Next step:** 进入 Phase 8.7 代码实施。
+- **Next step:** 跑服务器 benchmark（v5）验证 Phase 8.6 + 8.7 叠加后的准确率差距是否进一步缩小。
 
 ### Phase 8.6: 关键词检索升级为 BM25（计划已确立）
 - **Status:** pending（计划已写入三个计划文件，待 Phase 8.5 benchmark 验证后决定是否执行）

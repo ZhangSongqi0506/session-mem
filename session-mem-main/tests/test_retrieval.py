@@ -477,3 +477,80 @@ class TestMemorySystemRetrieveContext:
         assert "C_001" in ids
         assert "C_002" in ids
         backend.close()
+
+    def test_retrieve_context_sorts_activated_cells_by_timestamp(self):
+        from session_mem.core.memory_system import MemorySystem
+        from session_mem.storage.sqlite_backend import SQLiteBackend
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        backend = SQLiteBackend(db_path)
+        cell1 = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="later event",
+            keywords=["later"],
+            entities=[],
+            raw_text="This happened later.",
+            token_count=4,
+            timestamp_start="2026-04-14T12:00:00Z",
+        )
+        cell2 = MemoryCell(
+            id="C_002",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="earlier event",
+            keywords=["earlier"],
+            entities=[],
+            raw_text="This happened earlier.",
+            token_count=4,
+            timestamp_start="2026-04-14T10:00:00Z",
+        )
+        backend.cell_store.save(cell1)
+        backend.text_store.save(cell1.id, cell1.raw_text, cell1.token_count)
+        backend.cell_store.save(cell2)
+        backend.text_store.save(cell2.id, cell2.raw_text, cell2.token_count)
+
+        ms = MemorySystem(
+            session_id="s1",
+            llm_client=FakeLLMClient(),
+            vector_index=backend.vector_index,
+            cell_store=backend.cell_store,
+            text_store=backend.text_store,
+            meta_cell_store=backend,
+            query_rewriter=QueryRewriter(llm_client=None),
+        )
+        ms.add_turn("user", "Tell me about events.", "2026-04-14T10:00:00Z")
+
+        wm = ms.retrieve_context("earlier later", hot_zone_turns=2, top_k=2)
+        # Both cells should be activated; order should be by timestamp_start ascending
+        activated_ids = [c.id for c in wm.activated_cells]
+        assert "C_002" in activated_ids
+        assert "C_001" in activated_ids
+        assert activated_ids.index("C_002") < activated_ids.index("C_001")
+        backend.close()
+
+    def test_working_memory_includes_timestamp_prefix(self):
+        from session_mem.core.working_memory import WorkingMemory
+        from session_mem.core.cell import MemoryCell
+
+        cell = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="event",
+            raw_text="Something happened.",
+            timestamp_start="2026-04-14T10:00:00Z",
+            timestamp_end="2026-04-14T10:05:00Z",
+        )
+        wm = WorkingMemory(activated_cells=[cell])
+        prompt = wm.to_prompt()
+        assert len(prompt) == 1
+        assert "[2026-04-14T10:00:00Z - 2026-04-14T10:05:00Z]" in prompt[0]["content"]
+        assert "Something happened." in prompt[0]["content"]

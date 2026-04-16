@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 ANSWER_INSTRUCTION = (
     "Based only on the provided context, answer directly and concisely. "
     "Quote the relevant sentence explicitly. "
-    "Do not infer or over-interpret."
+    "Do not infer or over-interpret. "
+    "If the question asks about time, dates, or when something happened, "
+    "you must answer with the specific absolute timestamp or date explicitly."
 )
 
 

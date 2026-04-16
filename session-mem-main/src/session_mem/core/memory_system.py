@@ -199,8 +199,8 @@ class MemorySystem:
                     activated.append(cell)
                     seen.add(cell.id)
 
-        # 8. 按 RRF 分数降序排列 activated cells（取消总预算硬截断）
-        activated.sort(key=lambda c: score_map.get(c.id, 0.0), reverse=True)
+        # 8. 按 timestamp_start 升序排列 activated cells，恢复自然叙事顺序
+        activated.sort(key=lambda c: (c.timestamp_start is None, c.timestamp_start or ""))
 
         # 9. 获取 active Meta Cell
         meta_cell: MemoryCell | None = None

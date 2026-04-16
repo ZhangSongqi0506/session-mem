@@ -153,16 +153,17 @@
     - **配置参数**：`RetrievalConfig.BM25_K1 = 1.5`，`RetrievalConfig.BM25_B = 0.75`。
     - **代码变更**：`src/session_mem/retrieval/hybrid_search.py`、`src/session_mem/config.py`、`tests/test_retrieval.py`。
     - **验证结果**：全部 104 个测试通过；black + ruff 通过。新增 `test_bm25_penalizes_common_words` 和 `test_bm25_length_normalization` 分别验证 IDF 对高频通用词的降权效果和长度归一化对长文档的抑制作用。
-  - **Phase 8.7（待执行）**：
+  - **Phase 8.7（已完成，2026-04-16）**：
     14. **时序信息闭环优化**：Cell 本身已有 `timestamp_start`/`timestamp_end`，但 `memory_system.py:retrieve_context()` 最终按 RRF 分数降序组装 `activated_cells`，`working_memory.py:to_prompt()` 也未把时间戳写入 Prompt。这导致：
       - LLM 无法判断 Cell 的先后顺序，叙事链被高分通用 Cell 前置打乱；
       - 用户问 "When did..." 时，LLM 看不到时间锚点，只能盲猜；
       - `gap_detected()` 和 Cell 生成阶段的时间戳信号在最后一步丢失，未能形成闭环。
     - **修复方案**：
-      1. `memory_system.py`：筛选后的 `activated_cells` 改按 `timestamp_start` 升序排列，恢复自然时间线；`linked_prev` 因果链也会按时间自然展开。
+      1. `memory_system.py`：筛选后的 `activated_cells` 改按 `timestamp_start` 升序排列（None 值放最后），恢复自然时间线；`linked_prev` 因果链也会按时间自然展开。
       2. `working_memory.py`：`to_prompt()` 给每个 Cell 的 `raw_text` 前加上 `[timestamp_start - timestamp_end]\n` 前缀，让 LLM 感知绝对时间。
       3. `locomo_runner.py`：`_answer()` 的 system 指令追加 `"If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."`。
-    - **代码变更**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_memory_system.py`、`tests/test_retrieval.py`。
+    - **代码变更**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_retrieval.py`。
+    - **验证结果**：全部 106 个测试通过；black + ruff 通过。新增 `test_retrieve_context_sorts_activated_cells_by_timestamp` 和 `test_working_memory_includes_timestamp_prefix` 分别验证时间升序排列和时间戳前缀注入。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

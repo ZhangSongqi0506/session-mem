@@ -26,7 +26,11 @@ class WorkingMemory:
             parts.extend(self.hot_zone)
         for cell in self.activated_cells:
             if cell.raw_text:
-                parts.append(cell.raw_text)
+                text = cell.raw_text
+                if cell.timestamp_start or cell.timestamp_end:
+                    prefix = f"[{cell.timestamp_start or 'unknown'} - {cell.timestamp_end or 'unknown'}]\n"
+                    text = prefix + text
+                parts.append(text)
         if self.query:
             parts.append(self.query)
 

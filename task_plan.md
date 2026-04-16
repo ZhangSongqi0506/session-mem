@@ -228,12 +228,13 @@ Phase 8
     10. [x] **P1 - 关键词检索升级为 BM25**：`hybrid_search.py` 的 `keyword_scores()` 从集合 Jaccard 替换为基于 session-level 动态 IDF 的 BM25，参数 `k1=1.5`、`b=0.75` 写入 `RetrievalConfig`。保留 `entities` 的 `entity_bonus` 作为后处理加权。
     - **涉及代码**：`src/session_mem/retrieval/hybrid_search.py`、`src/session_mem/config.py`、`tests/test_retrieval.py`。
     - **验证结果**：全部 104 个测试通过；black + ruff 通过。新增 `test_bm25_penalizes_common_words` 和 `test_bm25_length_normalization` 验证 IDF 降权与长度归一化效果。
-  - **Phase 8.7**（待执行）
-    11. [ ] **P0 - activated_cells 按时间顺序组装 + Cell 时间戳注入 Prompt + 时间类问题强制回答绝对时间**：
+  - **Phase 8.7**（已完成）
+    11. [x] **P0 - activated_cells 按时间顺序组装 + Cell 时间戳注入 Prompt + 时间类问题强制回答绝对时间**：
       1. `memory_system.py:retrieve_context()` 中最终 `activated_cells` 改为按 `timestamp_start` 升序排列，恢复自然叙事顺序，避免高分通用 Cell 因 RRF 排序被前置而淹没具体答案 Cell。
       2. `working_memory.py:to_prompt()` 中给每个 `activated_cell` 的 `raw_text` 前增加 `[timestamp_start - timestamp_end]` 前缀，让 LLM 感知各段内容的绝对时间锚点。
       3. `locomo_runner.py:_answer()` 的 system 指令增加一条补充："If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."
-    - **涉及代码**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_memory_system.py`、`tests/test_retrieval.py`
+    - **涉及代码**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_retrieval.py`。
+    - **验证结果**：全部 106 个测试通过；black + ruff 通过。新增 `test_retrieve_context_sorts_activated_cells_by_timestamp` 和 `test_working_memory_includes_timestamp_prefix`。
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
