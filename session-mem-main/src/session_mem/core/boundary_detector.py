@@ -39,7 +39,12 @@ class SemanticBoundaryDetector:
             # Fallback：内容过长时强制切分，保留最后一轮作为新种子（与旧行为一致）
             return [max(1, len(turns) - 1)]
 
-        prompt_turns = [{"role": t.role, "content": t.content} for t in turns]
+        # 标准化 role，避免 LLM API 因非标准 role（如原始 speaker 名）而拒绝或忽略消息
+        valid_roles = {"system", "user", "assistant", "tool"}
+        prompt_turns = [
+            {"role": t.role if t.role in valid_roles else "user", "content": t.content}
+            for t in turns
+        ]
         messages = build_boundary_prompt(prompt_turns)
         try:
             response = self.llm.isolated_chat(messages, temperature=0.1)

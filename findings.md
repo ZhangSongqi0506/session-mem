@@ -72,6 +72,7 @@
 | LoCoMo 数据结构差异 | `locomo10.json` 中 conversation 含多个 session_x，已统一合并为单一会话；speaker_a→user、speaker_b→assistant；按 session 日期生成递增时间戳 |
 | 后端 LLM 不支持 `json_schema` response_format | 内网 vLLM/OneAPI 代理返回 `400 Bad Request`。修复方案：在 `QwenClient` 中新增 `supports_json_schema=False` 开关，跳过不兼容参数，完全依赖 Prompt + parser fallback |
 | `QwenClient.chat_completion()` model 硬编码与 `judge_answer()` 冲突 | `chat_completion()` 显式写死 `model=self.model`，而 `judge_answer()` 通过 kwargs 再传 `model=judge_model`，导致 `TypeError: got multiple values for keyword argument 'model'`，被 `except Exception: pass` 静默吞掉。修复方案：`model=kwargs.pop("model", self.model)`，允许覆盖 |
+| 语义边界检测因非标准 role 失效 | Phase 8.1 保留原始 speaker 名称（`Jon`/`Gina`）后，`boundary_detector.py` 直接将非标准 role 传给 LLM API，导致 `should_split()` 返回空列表，所有 Cell 均变成 `fragmented` 且高达 2200+ tokens。修复方案：在 `boundary_detector.py` 构建 prompt 时将非标准 role fallback 为 `user` |
 
 ## Phase 8 Framework
 - **目标**：解决服务器端到端跑测中发现的实际运行问题，进行代码性能优化与健壮性增强
@@ -123,6 +124,10 @@
     - **测试结果**：全部 102 个测试通过；black + ruff 通过。
   - **Phase 8.3（条件执行）**：
     9. **高频共现词惩罚**：若 8.1+8.2+8.2.1 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
+  - **Hotfix（2026-04-16，语义边界检测 role fallback）**：
+    - 服务器 benchmark（Phase 8.2.1 后）出现反常结果：所有 Cell 类型均为 `fragmented`，单 Cell 2200-2400 tokens，仅生成 4 个 Cell 即覆盖 369 轮对话。
+    - 根因：`data_loader.py` 保留原始 speaker 名称导致 `boundary_detector.py` 向 LLM API 传入非标准 role（`Jon`/`Gina`），`should_split()` 返回空列表，语义切分完全失效，全部对话堆积到硬上限后被打包为巨大 `fragmented` Cell。
+    - 修复：在 `boundary_detector.py` 内将非标准 role fallback 为 `user`，恢复细粒度语义边界检测。全部 102 个测试通过。
   - **Phase 8.4（待执行）**：
     10. **benchmark 方法级并发优化**：当前 `locomo_runner.py` 中 baseline / sliding / session-mem 三种方式在同一个 QA 内串行执行 LLM 调用。改为在单个 QA 内用 `ThreadPoolExecutor` 并发请求三种回答的生成，等全部返回后再统一 Judge，显著缩短 `--run_accuracy` 时的 benchmark 总耗时。与已有的 `--max_workers` session 级并发正交叠加。
 

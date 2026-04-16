@@ -43,6 +43,21 @@
   - `tests/test_retrieval.py`
 - **Next step:** 本地/服务器跑 checkpoint benchmark，评估 Phase 8.1+8.2+8.2.1 后的准确率差距，决定是否进入 Phase 8.3。
 
+### Hotfix: 语义边界检测因非标准 role 失效（2026-04-16）
+- **Status:** complete（代码已修改并推送）
+- **问题现象：**
+  - 服务器 benchmark（`locomo_phase821_2sess_10qa.json`）中所有 Cell 均为 `"cell_type": "fragmented"`，且每个 Cell 高达 2200-2400 tokens。
+  - 对比 `locomo_quick_test.json`（Phase 8.1 前跑的结果），Cell 大小正常（200-300 tokens），类型为 `fact`/`preference`/`task`。
+- **根因分析：**
+  - Phase 8.1 中 `data_loader.py` 保留了原始 speaker 名称（如 `Jon`、`Gina`）作为 `role`。
+  - `boundary_detector.py` 直接将非标准 role 传给 LLM API，vLLM/OneAPI 代理可能因非法 role 而忽略消息或返回异常，导致 `should_split()` 返回空列表 `[]`。
+  - 语义边界检测失效后，对话轮次一直累积到 `SenMemBuffer` 硬上限（2048 tokens）才被强制打包成巨大的 `fragmented` Cell。
+- **修复动作：**
+  - `src/session_mem/core/boundary_detector.py`：构建 prompt 时增加 `valid_roles = {"system", "user", "assistant", "tool"}` 校验，非标准 role fallback 为 `"user"`。
+  - 这样 `data_loader.py` 仍可保留原始 speaker 名称用于热区和 Cell 原文，而边界检测的 LLM 调用恢复正常。
+- **验证结果：** 全部 102 个测试通过；black + ruff 通过。
+- **Next step:** 重跑服务器 benchmark 以确认 Cell 粒度恢复正常，再决定是否进入 Phase 8.3 / 8.4。
+
 ### Phase 8.4: benchmark 方法级并发优化（待执行）
 - **Status:** pending（设计已确定，代码待修改）
 - **设计要点:**

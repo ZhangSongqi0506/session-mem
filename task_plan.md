@@ -203,6 +203,7 @@ Phase 7
     1. [x] **P0 - 热区构建错误**：`_build_hot_zone()` 只取 SenMemBuffer 末尾 2 轮，但零压缩缓冲区的全部内容都应属于热区。改为直接返回 `sen_buffer.turns` 全部内容。
     2. [x] **P2 - benchmark 流程中问题未进入热区**：`locomo_runner.py` 直接调用 `ms.retrieve_context(question)`。改为通过 `extra_turns` 参数将问题临时注入热区，避免 `add_turn()` 触发 Cell 生成的副作用。
     3. [x] **P1 - 数据集角色映射失真**（仅 benchmark 代码）：`benchmarks/data_loader.py` 将 speaker 强制映射为 `user`/`assistant`。改为保留原始 speaker 名称，仅涉及 `data_loader.py` 和 `prompt_assembler.py`。
+    4. [x] **Hotfix - 语义边界检测因非标准 role 失效**：`data_loader.py` 保留原始 speaker 名称后，`boundary_detector.py` 直接把 `Jon`/`Gina` 等非标准 role 传给 LLM API，导致 `should_split()` 返回空列表。修复：在构建 boundary prompt 时将非标准 role fallback 为 `user`，恢复细粒度语义切分。
   - **Phase 8.2**（已完成）
     4. [x] **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 中实体共现激活无条件拉入早期背景 Cell。优化为：实体共现候选需满足 `keyword score > 0` 且 `fused_score >= 0.4`，并按相关性排序后取前 3 个。
     5. [x] **P1 - 激活 Cell 缺少二次相关性截断 + 取消固定 top_k**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` 过于刚性。改为阈值法（`threshold=0.55`，动态上下限 `min_cells`/`max_cells`），最终统一按 `fused_score` 截断到 `total_budget=8`。
