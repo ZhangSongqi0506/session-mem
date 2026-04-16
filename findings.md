@@ -135,6 +135,8 @@
     - 修复：`hybrid_search.py` 的 `keyword_scores()` 改为扫描 `raw_text`；`config.py` 中 `VECTOR_SCORE_THRESHOLD` 从 0.6 降至 0.3。全部 102 个测试通过。
   - **Phase 8.4（待执行）**：
     10. **benchmark 方法级并发优化**：当前 `locomo_runner.py` 中 baseline / sliding / session-mem 三种方式在同一个 QA 内串行执行 LLM 调用。改为在单个 QA 内用 `ThreadPoolExecutor` 并发请求三种回答的生成，等全部返回后再统一 Judge，显著缩短 `--run_accuracy` 时的 benchmark 总耗时。与已有的 `--max_workers` session 级并发正交叠加。
+  - **Phase 8.5（待执行）**：
+    11. **LLM 回答指令优化（抑制过度解读）**：服务器 benchmark（v3）显示核心指标已达标（准确率差距 0.041，Token 节省率 50.17%），但剩余 bad case 的主要根因已从"检索失败"转变为"LLM 生成过度解读"。qwen2.5:72b 在获得正确答案所在 Cell 后，倾向于进行文学化重构和推理扩展（如把 "to support his business growth" 扩展为 5 大段 "symbolic break from corporate identity"），而 Judge 模型更偏好直接引用原文的简洁回答。修复方向：在 Prompt 组装层增加硬指令，强制要求直接引用、禁止推断。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

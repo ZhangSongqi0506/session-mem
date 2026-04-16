@@ -58,6 +58,22 @@
 - **验证结果：** 全部 102 个测试通过；black + ruff 通过。
 - **Next step:** 重跑服务器 benchmark（v3）验证准确率是否回升。
 
+### Session: 2026-04-16 - benchmark v3 结果分析与下一步计划
+- **Status:** complete（v3 benchmark 已跑完，核心指标达标）
+- **v3 结果汇总（`locomo_phase821_2sess_100qa_v3.json`，200 QA）：**
+  - **Token 节省率 vs baseline：50.17%**（目标 40%+）✅
+  - **准确率**：Baseline Judge 0.500，session-mem Judge **0.459**，差距 **0.041**（目标 <0.05）✅
+  - **sm_tokens 平均：6295**，**cells 平均：15.5**
+  - **Baseline 错误但 SM 正确：15/200**（7.5%）
+  - **SM 更好：24/200** | **Baseline 更好：31/200** | **平局：145/200**
+- **关键发现：**
+  1. **检索修复成功**：关键词路扫描 `raw_text` + 向量阈值降至 0.3 后，包含精确答案的 Cell 被成功召回。典型案例：conv-30-5 "ideal dance studio" 召回了 C_006（含 natural light / Marley flooring），conv-30-92 "tattoo" 正确回答。
+  2. **Cell 数量膨胀**：平均 15.5 个 Cell，高度集中在 16-17 个，token 节省率从 v4 的 77% 掉到 50%。
+  3. **LLM 过度解读成为新瓶颈**：31 个 baseline 更好的 QA 中，大量属于"检索对了但 LLM 不好好说话"。典型案例 conv-30-58：C_016 明确写 "to support his business growth"，但 SM 回答展开 5 大段 "symbolic break from corporate identity" 等过度推理，Judge 给 0.0。
+- **下一步计划（Phase 8.5）：**
+  - **P0 - LLM 回答指令优化**：在 Prompt 组装层增加硬指令，要求 LLM 基于提供的上下文直接回答、明确引用原文相关句、禁止推断和过度解读。
+  - **P1 - 收紧召回数量**：降低 `max_cells` 上限、提高 `MEMORY_SYSTEM_THRESHOLD`，把平均 Cell 数从 15.5 压到 10-12 个，提升 token 节省率。
+
 ### Hotfix: 语义边界检测因非标准 role 失效（2026-04-16）
 - **Status:** complete（代码已修改并推送）
 - **问题现象：**

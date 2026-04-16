@@ -219,6 +219,8 @@ Phase 7
     - **涉及代码**：`benchmarks/locomo_runner.py`、`tests/test_benchmark.py`
     - **并发策略**：方法级并发（per-QA 内 baseline/sliding/session-mem 同时请求 LLM），与已有的 session 级并发（`--max_workers`）正交叠加。
     - **注意事项**：需确保 LLM 后端（内网 qwen2.5:72b）能承受并发请求压力，必要时增加重试或降级逻辑。
+  - **Phase 8.5**（待执行）
+    8. [ ] **P0 - LLM 回答指令优化（抑制过度解读）**：服务器 benchmark（v3）显示核心指标已达标（准确率差距 0.041 < 0.05，Token 节省率 50.17% > 40%），但仍有 31/200 个 QA baseline 优于 session-mem。根因分析表明：检索已能召回正确答案所在 Cell，但 qwen2.5:72b 倾向于对原文进行过度推理和文学化润色，而非直接引用，导致 Judge 评分偏低。典型失败案例：conv-30-58 "Why did Jon shut down his bank account?"——C_016 明确包含 "to support his business growth"，但 SM 回答却展开 5 大段 "symbolic break from corporate identity" 等过度解读。修复：在 Prompt 组装层（`benchmarks/prompt_assembler.py` 或 `WorkingMemory.to_prompt()`）增加硬指令，要求 LLM "Based only on the provided context, answer directly and concisely. Quote the relevant sentence explicitly. Do not infer or over-interpret."
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
