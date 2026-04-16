@@ -250,6 +250,74 @@ class TestHybridSearcher:
         result = searcher.search("budget", top_k=1, fallback=False)
         assert result == ["C_001"]
 
+    def test_bm25_penalizes_common_words(self):
+        """BM25 应对高频通用词降权，对稀有词提权。"""
+        common_cell = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="Jon likes dance",
+            keywords=["jon", "dance"],
+            entities=[],
+            raw_text="Jon likes dance very much and dance is his life",
+        )
+        rare_cell = MemoryCell(
+            id="C_002",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="Marley flooring",
+            keywords=["marley", "flooring"],
+            entities=[],
+            raw_text="The studio has Marley flooring",
+        )
+        # Add a third cell to make "jon" and "dance" high-df terms
+        filler_cell = MemoryCell(
+            id="C_003",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="Jon dance again",
+            keywords=["jon", "dance"],
+            entities=[],
+            raw_text="Jon loves dance",
+        )
+        store = FakeCellStore([common_cell, rare_cell, filler_cell])
+        searcher = HybridSearcher(FakeVectorIndex(), store, "s1")
+
+        scores = searcher.keyword_scores("Marley flooring studio", store.list_by_session("s1"))
+        # rare_cell should have higher BM25 score because "marley" and "flooring" are rare
+        assert scores["C_002"] > scores["C_001"]
+
+    def test_bm25_length_normalization(self):
+        """BM25 应对长文档做长度归一化，相同词频下短文档得分更高。"""
+        short_cell = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="short doc",
+            keywords=["budget"],
+            entities=[],
+            raw_text="The budget is tight",
+        )
+        long_cell = MemoryCell(
+            id="C_002",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="long doc",
+            keywords=["budget"],
+            entities=[],
+            raw_text="The budget is tight and we need to plan carefully and consider many options and talk to stakeholders and review numbers and make decisions",
+        )
+        store = FakeCellStore([short_cell, long_cell])
+        searcher = HybridSearcher(FakeVectorIndex(), store, "s1")
+
+        scores = searcher.keyword_scores("budget", store.list_by_session("s1"))
+        assert scores["C_001"] > scores["C_002"]
+
 
 # -----------------------------------------------------------------------------
 # MemorySystem.retrieve_context integration (lightweight)

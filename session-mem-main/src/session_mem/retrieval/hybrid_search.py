@@ -125,31 +125,68 @@ class HybridSearcher:
         )
 
     def keyword_scores(self, query: str, cells: list) -> dict[str, float]:
-        """为每个 Cell 计算关键词匹配分数（Jaccard + 实体奖励）。"""
-        query_tokens = set(query.lower().split())
+        """为每个 Cell 计算关键词匹配分数（BM25 + 实体奖励）。"""
+        query_tokens = query.lower().split()
         if not query_tokens:
             return {}
 
+        unique_query_tokens = set(query_tokens)
+
+        # 构建文档（cell）的 token 列表
+        cell_docs: dict[str, list[str]] = {}
+        for cell in cells:
+            doc_tokens: list[str] = []
+            for kw in cell.keywords or []:
+                doc_tokens.append(kw.lower())
+            for word in (cell.raw_text or "").lower().split():
+                doc_tokens.append(word)
+            cell_docs[cell.id] = doc_tokens
+
+        # 计算 session-level IDF
+        N = len(cells)
+        df: dict[str, int] = defaultdict(int)
+        for doc_tokens in cell_docs.values():
+            seen_in_doc = set(doc_tokens)
+            for token in seen_in_doc:
+                df[token] += 1
+
+        idf: dict[str, float] = {}
+        for token, freq in df.items():
+            idf[token] = math.log((N - freq + 0.5) / (freq + 0.5) + 1.0)
+
+        # 计算平均文档长度
+        doc_lengths = [len(tokens) for tokens in cell_docs.values()]
+        avgdl = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 1.0
+        if avgdl == 0:
+            avgdl = 1.0
+
+        k1 = RetrievalConfig.BM25_K1
+        b = RetrievalConfig.BM25_B
+
         scores: dict[str, float] = {}
         for cell in cells:
-            cell_tokens: set[str] = set()
-            for kw in cell.keywords or []:
-                cell_tokens.add(kw.lower())
-            for word in (cell.raw_text or "").lower().split():
-                cell_tokens.add(word)
+            doc_tokens = cell_docs[cell.id]
+            doc_len = len(doc_tokens)
+            tf_map: dict[str, int] = defaultdict(int)
+            for token in doc_tokens:
+                tf_map[token] += 1
 
-            intersection = query_tokens & cell_tokens
-            union = query_tokens | cell_tokens
-            jaccard = len(intersection) / len(union) if union else 0.0
+            bm25_score = 0.0
+            for token in unique_query_tokens:
+                tf = tf_map.get(token, 0)
+                if tf == 0:
+                    continue
+                denom = tf + k1 * (1 - b + b * (doc_len / avgdl))
+                bm25_score += idf.get(token, 0.0) * (tf * (k1 + 1)) / denom
 
             # 实体匹配奖励
             entity_bonus = 0.0
             cell_entities = {e.lower() for e in (cell.entities or [])}
-            overlap = query_tokens & cell_entities
+            overlap = unique_query_tokens & cell_entities
             if overlap:
                 entity_bonus = min(0.3, 0.15 * len(overlap))
 
-            scores[cell.id] = min(1.0, jaccard + entity_bonus)
+            scores[cell.id] = bm25_score + entity_bonus
         return scores
 
     def _exact_keyword_scan(self, query: str) -> list[tuple[str, float]]:

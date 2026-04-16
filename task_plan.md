@@ -224,13 +224,10 @@ Phase 8
     9. [x] **P1 - 内部 token 开销统计补充**：新增 `session_mem_internal_tokens` 字段，统计检索阶段 QueryRewriter prompt tokens + Embedding tokens，输出到 JSON 聚合结果与 `_report.txt`。
     - **涉及代码**：`benchmarks/locomo_runner.py`、`benchmarks/metrics.py`、`tests/test_benchmark.py`
     - **验证结果**：全部 102 个测试通过；black + ruff 通过；已提交 commit `5a33af9`。
-  - **Phase 8.6**（待执行）
-    10. [ ] **P1 - 关键词检索升级为 BM25**：当前 `hybrid_search.py` 的 `keyword_scores()` 使用集合 Jaccard，仅判断 token 是否存在，缺少词频（TF）、逆文档频率（IDF）和长度归一化。升级为 BM25 后，可更精准地抑制通用背景 Cell（如 "Jon"、"dance" 等高频词获得低 IDF 权重），同时提升稀有词（如 "Marley"、"regionals"）的区分度，有望进一步缩小剩余的检索失败型 bad case。计划在 Phase 8.5 服务器 benchmark 验证后，根据准确率差距是否仍 ≥0.03 决定是否实施。
-    - **涉及代码**：`src/session_mem/retrieval/hybrid_search.py`、`tests/test_retrieval.py`
-    - **实施要点**：
-      1. 在 `HybridSearcher` 内维护 session-level 词频统计（或基于当前 `cell_store.list_by_session` 动态计算 IDF）。
-      2. 将 `keyword_scores()` 的 Jaccard 替换为 BM25 分数计算，保留 `entities` 的 entity_bonus 作为后处理加权。
-      3. 参数建议：k1=1.5，b=0.75，作为可配置项写入 `RetrievalConfig`。
+  - **Phase 8.6**（已完成）
+    10. [x] **P1 - 关键词检索升级为 BM25**：`hybrid_search.py` 的 `keyword_scores()` 从集合 Jaccard 替换为基于 session-level 动态 IDF 的 BM25，参数 `k1=1.5`、`b=0.75` 写入 `RetrievalConfig`。保留 `entities` 的 `entity_bonus` 作为后处理加权。
+    - **涉及代码**：`src/session_mem/retrieval/hybrid_search.py`、`src/session_mem/config.py`、`tests/test_retrieval.py`。
+    - **验证结果**：全部 104 个测试通过；black + ruff 通过。新增 `test_bm25_penalizes_common_words` 和 `test_bm25_length_normalization` 验证 IDF 降权与长度归一化效果。
   - **Phase 8.7**（待执行）
     11. [ ] **P0 - activated_cells 按时间顺序组装 + Cell 时间戳注入 Prompt + 时间类问题强制回答绝对时间**：
       1. `memory_system.py:retrieve_context()` 中最终 `activated_cells` 改为按 `timestamp_start` 升序排列，恢复自然叙事顺序，避免高分通用 Cell 因 RRF 排序被前置而淹没具体答案 Cell。

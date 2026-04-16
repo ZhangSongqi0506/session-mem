@@ -23,3 +23,7 @@ class RetrievalConfig:
 
     # MemorySystem 主阈值（RRF score >= 此值才进入 selected）
     MEMORY_SYSTEM_THRESHOLD: float = 0.015
+
+    # BM25 参数
+    BM25_K1: float = 1.5
+    BM25_B: float = 0.75

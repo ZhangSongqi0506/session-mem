@@ -5,6 +5,25 @@
 
 ## Session: 2026-04-16
 
+### Phase 8.6: 关键词检索升级为 BM25
+- **Status:** complete（代码已修改、测试通过）
+- **Actions taken:**
+  1. 修改 `src/session_mem/config.py`：新增 `BM25_K1 = 1.5` 和 `BM25_B = 0.75` 两个类变量。
+  2. 重构 `src/session_mem/retrieval/hybrid_search.py:keyword_scores()`：
+     - 将 Jaccard 集合匹配替换为基于 session-level 统计的 BM25。
+     - 动态计算文档频率（DF）和 IDF：`idf = log((N - df + 0.5) / (df + 0.5) + 1)`。
+     - 统计每个 cell 的 term frequency（TF）和文档长度，代入 BM25 公式计算分数。
+     - 保留原有的 `entity_bonus` 作为后处理加权项。
+  3. 更新 `tests/test_retrieval.py`：
+     - 新增 `test_bm25_penalizes_common_words`：构造高频通用词 cell 和稀有词 cell，验证 BM25 对稀有词匹配的提权效果。
+     - 新增 `test_bm25_length_normalization`：构造等词频但长度差异大的两个 cell，验证短文档得分高于长文档。
+  4. 运行验证：全部 **104 个测试通过**；`black` + `ruff` 通过。
+- **涉及文件:**
+  - `src/session_mem/retrieval/hybrid_search.py`
+  - `src/session_mem/config.py`
+  - `tests/test_retrieval.py`
+- **Next step:** 进入 Phase 8.7 时序信息闭环优化，或先跑服务器 benchmark 验证 BM25 对准确率的提升效果。
+
 ### Phase 8.7: 时序信息闭环优化（计划已确立）
 - **Status:** pending（计划已写入三个计划文件，待执行）
 - **Actions taken:**

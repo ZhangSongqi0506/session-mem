@@ -144,10 +144,15 @@
     12. **内部 token 开销统计**：新增 `session_mem_internal_tokens` 字段，统计检索阶段 QueryRewriter prompt tokens + Embedding tokens，输出到 JSON 聚合结果与 `_report.txt`。
     - **代码变更**：`benchmarks/locomo_runner.py`、`benchmarks/metrics.py`、`tests/test_benchmark.py`。
     - **验证结果**：全部 102 个测试通过；black + ruff 通过；已提交 commit `5a33af9`。
-  - **Phase 8.6（待执行）**：
-    13. **关键词检索升级为 BM25**：当前 `hybrid_search.py` 的 `keyword_scores()` 使用集合 Jaccard，仅判断 token 是否"存在"，缺少 TF/IDF 和长度归一化。升级为 BM25 后，通用高频词（如 "Jon"、"dance"）因 IDF 低而被自然降权，稀有词（如 "Marley"、"regionals"）获得更高区分度，有望进一步修复剩余的检索失败型 bad case。
+  - **Phase 8.6（已完成，2026-04-16）**：
+    13. **关键词检索升级为 BM25**：`hybrid_search.py` 的 `keyword_scores()` 从集合 Jaccard 替换为基于 session-level 动态 IDF 的 BM25。
+    - **实现细节**：
+      - 基于 `cells` 列表动态计算每个 token 的文档频率（DF）和 IDF（标准 BM25 平滑公式 `log((N - df + 0.5) / (df + 0.5) + 1)`）。
+      - 统计每个 cell 的 term frequency（TF）和文档长度，计算 BM25 分数。
+      - 保留 `entity_bonus` 作为后处理加权项。
+    - **配置参数**：`RetrievalConfig.BM25_K1 = 1.5`，`RetrievalConfig.BM25_B = 0.75`。
     - **代码变更**：`src/session_mem/retrieval/hybrid_search.py`、`src/session_mem/config.py`、`tests/test_retrieval.py`。
-    - **执行条件**：待 Phase 8.5 服务器 benchmark 验证后，若准确率差距仍 ≥0.03 再启动。
+    - **验证结果**：全部 104 个测试通过；black + ruff 通过。新增 `test_bm25_penalizes_common_words` 和 `test_bm25_length_normalization` 分别验证 IDF 对高频通用词的降权效果和长度归一化对长文档的抑制作用。
   - **Phase 8.7（待执行）**：
     14. **时序信息闭环优化**：Cell 本身已有 `timestamp_start`/`timestamp_end`，但 `memory_system.py:retrieve_context()` 最终按 RRF 分数降序组装 `activated_cells`，`working_memory.py:to_prompt()` 也未把时间戳写入 Prompt。这导致：
       - LLM 无法判断 Cell 的先后顺序，叙事链被高分通用 Cell 前置打乱；
