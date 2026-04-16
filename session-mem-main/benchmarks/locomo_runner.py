@@ -7,6 +7,7 @@ import concurrent.futures
 import logging
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from session_mem.core.memory_system import MemorySystem
@@ -110,7 +111,14 @@ def run_session(
 
         # --- session-mem ---
         start = time.perf_counter()
-        wm = ms.retrieve_context(question, hot_zone_turns=2, top_k=2)
+        extra_turns = [
+            {
+                "role": "user",
+                "content": question,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ]
+        wm = ms.retrieve_context(question, hot_zone_turns=2, top_k=2, extra_turns=extra_turns)
         metrics.session_mem_latency_ms = (time.perf_counter() - start) * 1000
 
         sm_prompt = wm.to_prompt()

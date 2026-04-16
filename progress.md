@@ -3,6 +3,27 @@
   WHAT: session-mem 项目的会话级进度日志
 -->
 
+## Session: 2026-04-16
+
+### Phase 8: 运行优化与问题修复（计划更新，进入 Phase 8.1）
+- **Status:** in_progress（Phase 8.1 开始实施）
+- **Actions taken:**
+  1. 完成新计划的系统性 review，将 Phase 8 的修复工作拆分为 **Phase 8.1 / 8.2 / 8.3**。
+  2. 关键方案调整：
+     - **P2-2（问题入热区）**：废弃 `add_turn()+pop()`，改用 `retrieve_context(extra_turns=...)` 零副作用注入。
+     - **P0-1（热区修复）**：直接返回全部 `sen_buffer.turns`，不预设 token 软上限。
+     - **P1-2 + P0-2（检索策略）**：取消固定 `top_k`，改为阈值法 + 动态上下限 + 总预算 8 截断；实体共现加双重门槛（`keyword_score > 0` 且 `fused_score >= 0.4`）。
+     - **Phase 8.3 改为条件执行**：8.1+8.2 后先跑 checkpoint benchmark，若差距 <0.05 则跳过。
+     - **P1-1（角色映射）**：影响面限定在 `benchmarks/` 目录，不触碰核心模块。
+  3. 同步更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件。
+  4. 实施 Phase 8.1：
+     - `memory_system.py`：`_build_hot_zone()` 直接返回全部 `sen_buffer.turns`；`retrieve_context()` 新增 `extra_turns` 参数。
+     - `locomo_runner.py`：通过 `extra_turns` 将问题注入热区，零副作用。
+     - `data_loader.py`：保留原始 speaker 名称，不再强制映射 user/assistant。
+     - 修复 `test_benchmark.py` 断言以匹配新行为。
+  5. 全部 26 个相关测试通过；black + ruff 通过。
+- **Next step:** 实施 Phase 8.2（检索策略阈值法重构与实体共现优化）。
+
 ## Session: 2026-04-15
 
 ### Phase 8: 运行优化与问题修复（Meta Cell 膨胀修复后 benchmark 重跑与分析）

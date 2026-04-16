@@ -58,8 +58,8 @@ def test_load_locomo_sessions_merges_sessions():
     assert len(sessions) == 1
     assert sessions[0].session_id == "conv-test"
     assert sessions[0].turn_count == 3
-    assert sessions[0].turns[0]["role"] == "user"
-    assert sessions[0].turns[1]["role"] == "assistant"
+    assert sessions[0].turns[0]["role"] == "Alice"
+    assert sessions[0].turns[1]["role"] == "Bob"
     assert sessions[0].qa_list[0]["question"] == "Who said hello?"
 
     Path(path).unlink()

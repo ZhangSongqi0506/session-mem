@@ -103,14 +103,16 @@
     - Q41 "What was Gina's favorite dancing memory?" → Baseline 正确（regionals competition），session-mem 回答 "没有明确提到"
     - Q42 "What kind of dance piece did Gina's team perform?" → Baseline 正确（"Finding Freedom"），session-mem 回答 "没有提及"
     - 共性：缺失的后期 Cell（如 C_020 关于 Gina 的舞蹈奖杯/比赛）未被召回，而 C_001/C_002 等通用 Cell 占用了激活名额
-- **待修复项（按优先级排序）**：
-  1. **P0 - 热区构建错误**：`_build_hot_zone()` 只取 SenMemBuffer 末尾 2 轮，但零压缩缓冲区的全部内容都应属于热区。导致热区 token 仅 32（预期约 400），最新上下文严重丢失。
-  2. **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 的实体共现激活无条件拉入 C_001（96%）、C_002（80%）、C_004（74.5%）等早期背景 Cell，挤占真正含答案的后期 Cell，是准确率从 0.511 → 0.358 的主因。
-  3. **P1 - 数据集角色映射失真**：`benchmarks/data_loader.py` 将 Jon/Gina 的对等对话强制映射为 `user`/`assistant`，把第三方对话硬套进人机助手范式。应保留原始 speaker 名称。
-  4. **P1 - 激活 Cell 缺少二次相关性截断**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` = 刚性 6-7 个 Cell，缺少统一按查询相关度重新排序和截断。
-  5. **P2 - 关键词匹配对通用词过于敏感**：Jaccard 匹配下 "dance"、"Jon"、"Gina" 等高频词几乎每个 Cell 都有，导致早期通用 Cell 获得虚高 keyword score。
-  6. **P2 - benchmark 流程中问题未进入热区**：`locomo_runner.py` 直接 `ms.retrieve_context(question)`，问题本身没有先入 SenMemBuffer，QueryRewriter 做指代消解时缺少当前问题上下文。
-  7. **P3 - Judge 阈值审视**：Baseline 自身 Judge 仅 0.511，部分 0 分案例可能并非完全错误，需抽样复核评估标准是否过严。
+- **新修复计划（Phase 8.1 / 8.2 / 8.3）**：
+  - **Phase 8.1**：
+    1. **热区构建错误**：`_build_hot_zone()` 改为直接返回 `sen_buffer.turns` 全部内容，不预设 token 软上限（当前 Token 节省率 77.92% 有余量）。
+    2. **benchmark 问题未进入热区**：废弃 `add_turn()+pop()` 方案（会触发语义边界检测污染 session），改为给 `retrieve_context()` 新增 `extra_turns` 参数临时注入问题。
+    3. **数据集角色映射失真**（仅 benchmark 代码）：`data_loader.py` 保留原始 speaker 名称，不再强制映射为 user/assistant，影响面限定在 `benchmarks/` 目录。
+  - **Phase 8.2**：
+    4. **检索策略阈值法重构**：取消固定 `top_k=2`，改用 `search_with_scores()` 获取全部候选，以 `threshold=0.55` 筛选，配合动态上下限 `min_cells = max(2, min(5, total_cells // 10))`、`max_cells = max(min_cells + 1, min(8, total_cells // 3))`，最终统一按 `fused_score` 截断到 `total_budget=8`。
+    5. **实体共现优化**：候选需同时满足 `keyword_score > 0` 和 `fused_score >= 0.4`，按相关性排序后取前 3 个，阻止早期通用 Cell 无条件混入。
+  - **Phase 8.3（条件执行）**：
+    6. **高频共现词惩罚**：若 8.1+8.2 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

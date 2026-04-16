@@ -107,13 +107,14 @@ class MemorySystem:
         query: str,
         hot_zone_turns: int = 2,
         top_k: int = 2,
+        extra_turns: list[dict[str, str]] | None = None,
     ) -> WorkingMemory:
         """
         检索相关 Cell 并组装 Working Memory。
         Meta Cell 无条件前置。
         """
         # 1. 构建热区
-        hot_zone = self._build_hot_zone(hot_zone_turns)
+        hot_zone = self._build_hot_zone(hot_zone_turns, extra_turns=extra_turns)
 
         # 2. 查询重写
         rewritten_query = self.query_rewriter.rewrite(query, hot_zone)
@@ -191,9 +192,17 @@ class MemorySystem:
         )
         getattr(self.meta_cell_store, "save_meta_cell", lambda c: None)(meta_cell)
 
-    def _build_hot_zone(self, n_turns: int) -> list[str]:
-        recent = self.sen_buffer.turns[-n_turns:]
-        return [f"[{t.role}]: {t.content}" for t in recent]
+    def _build_hot_zone(
+        self,
+        n_turns: int,
+        extra_turns: list[dict[str, str]] | None = None,
+    ) -> list[str]:
+        # SenMemBuffer 是零压缩缓冲区，全部内容都属于热区
+        hot_zone = [f"[{t.role}]: {t.content}" for t in self.sen_buffer.turns]
+        if extra_turns:
+            for et in extra_turns:
+                hot_zone.append(f"[{et.get('role', 'user')}]: {et.get('content', '')}")
+        return hot_zone
 
     def _resolve_max_cell_id(self, cell_store: CellStore) -> int:
         """从持久化存储中解析当前会话的最大 Cell 序号，避免重启后 ID 冲突。"""

@@ -198,28 +198,35 @@ Phase 7
 - **新增待修复项**（2026-04-15 晚）
   1. [x] **评测聚合指标修正**：`benchmarks/metrics.py` 删除 `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`，替换为 `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`
   2. [x] **Meta Cell 膨胀修复**：`meta_cell_generator.py` 让 `raw_text` 优先使用 LLM 返回的 `summary`（预期 300-500 tokens），而非全文累积拼接（当前 11,578 tokens）
-- **新增待修复项**（2026-04-15 benchmark 重跑后，按优先级排序）
-  3. [ ] **P0 - 热区构建错误**：`_build_hot_zone()` 只取 SenMemBuffer 末尾 2 轮，但 SenMemBuffer 作为零压缩缓冲区，其全部内容都应属于热区。这导致最近上下文大量丢失，热区 token 仅 32（预期约 400）。
-  4. [ ] **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 中实体共现激活几乎每次都将 C_001（96%）、C_002（80%）、C_004（74.5%）等早期背景 Cell 拉入 Working Memory，挤占真正包含答案的特定后期 Cell 位置，是准确率下降的主因。
-  5. [ ] **P1 - 数据集角色映射失真**：`benchmarks/data_loader.py` 将 LoCoMo 中 Jon/Gina 的对等对话强制映射为 `user`/`assistant`，把第三方对话硬套进人机助手范式，可能扭曲检索与 Prompt 语义。应保留原始 speaker 名称。
-  6. [ ] **P1 - 激活 Cell 缺少二次相关性截断**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` = 刚性 6-7 个 Cell，缺少统一按查询相关度重新排序和截断的机制。
-  7. [ ] **P2 - 关键词匹配对通用词过于敏感**：Jaccard 匹配下 "dance"、"Jon"、"Gina" 等高频词几乎每个 Cell 都有，导致早期通用 Cell 获得虚高 keyword score。
-  8. [ ] **P2 - benchmark 流程中问题未进入热区**：`locomo_runner.py` 直接 `ms.retrieve_context(question)`，问题本身没有先入 SenMemBuffer，QueryRewriter 做指代消解时缺少当前问题上下文。
+- **新增待修复项**（2026-04-15 benchmark 重跑后，按新计划分为 Phase 8.1 / 8.2 / 8.3）
+  - **Phase 8.1**（已完成）
+    1. [x] **P0 - 热区构建错误**：`_build_hot_zone()` 只取 SenMemBuffer 末尾 2 轮，但零压缩缓冲区的全部内容都应属于热区。改为直接返回 `sen_buffer.turns` 全部内容。
+    2. [x] **P2 - benchmark 流程中问题未进入热区**：`locomo_runner.py` 直接调用 `ms.retrieve_context(question)`。改为通过 `extra_turns` 参数将问题临时注入热区，避免 `add_turn()` 触发 Cell 生成的副作用。
+    3. [x] **P1 - 数据集角色映射失真**（仅 benchmark 代码）：`benchmarks/data_loader.py` 将 speaker 强制映射为 `user`/`assistant`。改为保留原始 speaker 名称，仅涉及 `data_loader.py` 和 `prompt_assembler.py`。
+  - **Phase 8.2**（待执行）
+    4. [ ] **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 中实体共现激活无条件拉入早期背景 Cell。优化为：实体共现候选需满足 `keyword score > 0` 且 `fused_score >= 0.4`，并按相关性排序后取前 3 个。
+    5. [ ] **P1 - 激活 Cell 缺少二次相关性截断 + 取消固定 top_k**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` 过于刚性。改为阈值法（`threshold=0.55`，动态上下限 `min_cells`/`max_cells`），最终统一按 `fused_score` 截断到 `total_budget=8`。
+  - **Phase 8.3**（条件执行）
+    6. [ ] **P2 - 关键词匹配对通用词过于敏感**：若 Phase 8.1+8.2 后准确率差距仍 ≥0.05，实施 session-level 高频共现词惩罚（动态 IDF 加权 Jaccard）。
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
   - `benchmarks/locomo_runner.py`
+  - `benchmarks/data_loader.py`
+  - `benchmarks/prompt_assembler.py`
   - `tests/test_benchmark.py`
-  - `src/session_mem/core/meta_cell_generator.py`
+  - `src/session_mem/core/meta_cell_generator.py`（已修复）
   - `src/session_mem/core/memory_system.py`
   - `src/session_mem/retrieval/hybrid_search.py`
 - **验收标准**:
   1. 每个 QA 的 JSON 结果包含 Meta Cell tokens、热区 tokens、激活 Cell 列表、三个回答的独立 Judge 分数
   2. 运行后自动生成 `_report.txt` 文本报告，包含 per-QA 的 token 拆解与回答对比
   3. 代码通过 black + ruff，全部单元测试通过
-  4. `_report.txt` 中 Meta Cell token 数从 ~11,500 降至数百级别
-  5. Token 节省率 vs baseline 提升到 40% 以上
+  4. `_report.txt` 中 Meta Cell token 数从 ~11,500 降至数百级别（已完成）
+  5. Token 节省率 vs baseline 保持 >60%
   6. **session-mem Judge 评分 vs baseline 差距缩小到 <0.05**（当前 0.153）
+  7. 热区 token 从 ~32 提升到 ~300-500
+  8. 激活 Cell 数量从刚性 6-7 变为动态 2-8
 
 ## Key Questions
 1. ✅ 选择 Python 还是 Node.js 作为主要实现语言？ → **Python**

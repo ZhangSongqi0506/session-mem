@@ -46,14 +46,8 @@ def _build_timestamp(session_dt: datetime, turn_index: int) -> str:
 
 
 def _normalize_role(speaker: str, speaker_a: str, speaker_b: str) -> str:
-    """将 speaker 名字归一化为 user/assistant。"""
-    speaker_norm = speaker.strip().lower()
-    if speaker_norm == speaker_a.strip().lower():
-        return "user"
-    if speaker_norm == speaker_b.strip().lower():
-        return "assistant"
-    # fallback：默认第一个说话人为 user
-    return "user"
+    """保留原始 speaker 名称，不再强制映射为 user/assistant。"""
+    return speaker.strip()
 
 
 def load_locomo_sessions(
