@@ -266,6 +266,7 @@ def test_compute_aggregate_with_qas():
             baseline_judge_score=0.8,
             sliding_judge_score=0.6,
             session_mem_judge_score=0.9,
+            session_mem_internal_tokens=12,
         ),
         QAMetrics(
             session_id="s1",
@@ -282,6 +283,7 @@ def test_compute_aggregate_with_qas():
             baseline_judge_score=0.7,
             sliding_judge_score=0.5,
             session_mem_judge_score=0.85,
+            session_mem_internal_tokens=8,
         ),
     ]
     agg = compute_aggregate(qas)
@@ -290,6 +292,7 @@ def test_compute_aggregate_with_qas():
     assert agg.avg_token_saving_rate_vs_sliding == 0.25
     assert agg.avg_session_mem_latency_ms == 15.0
     assert agg.median_session_mem_latency_ms == 15.0
+    assert agg.avg_session_mem_internal_tokens == 10.0
     assert agg.avg_baseline_judge_score == 0.75
     assert agg.avg_sliding_judge_score == 0.55
     assert agg.avg_session_mem_judge_score == 0.875
@@ -359,6 +362,7 @@ def test_evaluation_result_text_report():
                     "token_count": 35,
                 }
             ],
+            session_mem_internal_tokens=7,
             baseline_judge_score=0.6,
             sliding_judge_score=0.7,
             session_mem_judge_score=0.8,
@@ -374,6 +378,7 @@ def test_evaluation_result_text_report():
     assert "Session-mem LoCoMo Evaluation Report" in text
     assert "Meta Cell: 5 tokens" in text
     assert "Hot Zone: 10 tokens" in text
+    assert "Internal Tokens (retrieval): 7 tokens" in text
     assert "C_001 [fact] 35 tokens: test summary" in text
     assert "Judge: 0.6" in text
     assert "Judge: 0.7" in text
@@ -419,6 +424,7 @@ def test_run_session_detail_fields_exist():
     assert hasattr(m, "session_mem_hot_zone_tokens")
     assert hasattr(m, "session_mem_activated_cell_count")
     assert hasattr(m, "session_mem_activated_cells")
+    assert hasattr(m, "session_mem_internal_tokens")
     assert isinstance(m.session_mem_activated_cells, list)
 
 

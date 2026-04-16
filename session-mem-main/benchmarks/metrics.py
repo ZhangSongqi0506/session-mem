@@ -39,6 +39,7 @@ class QAMetrics:
     session_mem_hot_zone_tokens: int = 0
     session_mem_activated_cell_count: int = 0
     session_mem_activated_cells: list[dict[str, Any]] = field(default_factory=list)
+    session_mem_internal_tokens: int = 0
 
     # Token 节省率
     token_saving_rate_vs_baseline: float = 0.0
@@ -71,6 +72,9 @@ class EvaluationResult:
     median_session_mem_latency_ms: float = 0.0
     p95_session_mem_latency_ms: float = 0.0
 
+    # Internal token overhead
+    avg_session_mem_internal_tokens: float = 0.0
+
     # Judge
     avg_baseline_judge_score: float | None = None
     avg_sliding_judge_score: float | None = None
@@ -88,6 +92,7 @@ class EvaluationResult:
             "avg_session_mem_latency_ms": self.avg_session_mem_latency_ms,
             "median_session_mem_latency_ms": self.median_session_mem_latency_ms,
             "p95_session_mem_latency_ms": self.p95_session_mem_latency_ms,
+            "avg_session_mem_internal_tokens": self.avg_session_mem_internal_tokens,
             "avg_baseline_judge_score": self.avg_baseline_judge_score,
             "avg_sliding_judge_score": self.avg_sliding_judge_score,
             "avg_session_mem_judge_score": self.avg_session_mem_judge_score,
@@ -110,6 +115,7 @@ class EvaluationResult:
                     "session_mem_hot_zone_tokens": q.session_mem_hot_zone_tokens,
                     "session_mem_activated_cell_count": q.session_mem_activated_cell_count,
                     "session_mem_activated_cells": q.session_mem_activated_cells,
+                    "session_mem_internal_tokens": q.session_mem_internal_tokens,
                     "token_saving_rate_vs_baseline": q.token_saving_rate_vs_baseline,
                     "token_saving_rate_vs_sliding": q.token_saving_rate_vs_sliding,
                     "judge_score_vs_baseline": q.judge_score_vs_baseline,
@@ -171,6 +177,7 @@ class EvaluationResult:
             lines.append(f"  Tokens: {q.session_mem_tokens} | Judge: {q.session_mem_judge_score}")
             lines.append(f"  Meta Cell: {q.session_mem_meta_cell_tokens} tokens")
             lines.append(f"  Hot Zone: {q.session_mem_hot_zone_tokens} tokens")
+            lines.append(f"  Internal Tokens (retrieval): {q.session_mem_internal_tokens} tokens")
             lines.append(f"  Activated Cells ({q.session_mem_activated_cell_count}):")
             for cell in q.session_mem_activated_cells:
                 lines.append(
@@ -210,6 +217,9 @@ def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
     p95_idx = int(total * 0.95)
     p95_sm_lat = sm_lats[min(p95_idx, total - 1)]
 
+    internal_tokens = [q.session_mem_internal_tokens for q in qas]
+    avg_internal_tokens = sum(internal_tokens) / total if internal_tokens else 0.0
+
     baseline_judge_scores = [
         q.baseline_judge_score for q in qas if q.baseline_judge_score is not None
     ]
@@ -239,6 +249,7 @@ def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
         avg_session_mem_latency_ms=avg_sm_lat,
         median_session_mem_latency_ms=median_sm_lat,
         p95_session_mem_latency_ms=p95_sm_lat,
+        avg_session_mem_internal_tokens=avg_internal_tokens,
         avg_baseline_judge_score=avg_baseline_judge,
         avg_sliding_judge_score=avg_sliding_judge,
         avg_session_mem_judge_score=avg_session_mem_judge,

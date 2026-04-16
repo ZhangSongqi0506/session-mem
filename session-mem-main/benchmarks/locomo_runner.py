@@ -22,12 +22,20 @@ from benchmarks.prompt_assembler import PromptAssembler
 logger = logging.getLogger(__name__)
 
 
+ANSWER_INSTRUCTION = (
+    "Based only on the provided context, answer directly and concisely. "
+    "Quote the relevant sentence explicitly. "
+    "Do not infer or over-interpret."
+)
+
+
 def _answer(llm_client, messages: list[dict[str, str]]) -> str:
     """调用 LLM 生成回答。"""
     if not messages:
         return ""
+    instructed = [{"role": "system", "content": ANSWER_INSTRUCTION}] + messages
     try:
-        resp = llm_client.chat_completion(messages=messages, temperature=0.3)
+        resp = llm_client.chat_completion(messages=instructed, temperature=0.3)
         return resp.strip()
     except Exception as exc:
         logger.warning("LLM answer failed: %s", exc)
@@ -88,26 +96,11 @@ def run_session(
         baseline_msgs, baseline_tokens = assembler.build_baseline(session.turns, query=question)
         metrics.baseline_tokens = baseline_tokens
 
-        if run_accuracy:
-            start = time.perf_counter()
-            metrics.baseline_answer = _answer(llm_client, baseline_msgs)
-            metrics.baseline_latency_ms = (time.perf_counter() - start) * 1000
-        else:
-            # 不跑 LLM 时 latency 用 token 估算作为代理（或设为 0）
-            metrics.baseline_latency_ms = 0.0
-
         # --- 滑窗基线 ---
         slide_msgs, slide_tokens = assembler.build_sliding_window(
             session.turns, query=question, window_size=sliding_window_size
         )
         metrics.sliding_tokens = slide_tokens
-
-        if run_accuracy:
-            start = time.perf_counter()
-            metrics.sliding_answer = _answer(llm_client, slide_msgs)
-            metrics.sliding_latency_ms = (time.perf_counter() - start) * 1000
-        else:
-            metrics.sliding_latency_ms = 0.0
 
         # --- session-mem ---
         start = time.perf_counter()
@@ -148,8 +141,44 @@ def run_session(
             for cell in wm.activated_cells
         ]
 
-        if run_accuracy:
-            metrics.session_mem_answer = _answer(llm_client, sm_msgs)
+        # session-mem 内部 token 开销估算（QueryRewriter + Embedding）
+        hot_zone_text = "\n\n".join(wm.hot_zone)
+        internal_tokens = 0
+        # Embedding tokens
+        internal_tokens += estimator.estimate(wm.query)
+        # QueryRewriter prompt tokens（若触发条件满足）
+        tokens = estimator.estimate(question)
+        pronouns = (
+            "这",
+            "那",
+            "刚才",
+            "之前",
+            "它",
+            "他",
+            "她",
+            "这个",
+            "那个",
+            "this",
+            "that",
+            "it",
+            "he",
+            "she",
+            "they",
+            "them",
+            "these",
+            "those",
+        )
+        if tokens < 10 or any(w in question.lower() for w in pronouns):
+            rewrite_system = (
+                "你是一个查询重写助手。请根据最近对话上下文，"
+                "将用户的短查询或含指代词的查询扩展为明确、完整的句子。"
+                "只输出扩展后的查询，不要解释。"
+            )
+            rewrite_prompt = (
+                f"最近对话：\n{hot_zone_text}\n\n" f"用户查询：{question}\n\n扩展后查询："
+            )
+            internal_tokens += estimator.estimate(rewrite_system + rewrite_prompt)
+        metrics.session_mem_internal_tokens = internal_tokens
 
         # Token 节省率
         if metrics.baseline_tokens > 0:
@@ -161,7 +190,33 @@ def run_session(
                 metrics.sliding_tokens - metrics.session_mem_tokens
             ) / metrics.sliding_tokens
 
-        # Judge 评分
+        # --- 方法级并发：三种回答生成 ---
+        if run_accuracy:
+
+            def _timed_answer(msgs: list[dict[str, str]]) -> tuple[str, float]:
+                start = time.perf_counter()
+                ans = _answer(llm_client, msgs)
+                latency = (time.perf_counter() - start) * 1000
+                return ans, latency
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                future_baseline = executor.submit(_timed_answer, baseline_msgs)
+                future_sliding = executor.submit(_timed_answer, slide_msgs)
+                future_sm = executor.submit(_timed_answer, sm_msgs)
+
+                metrics.baseline_answer, metrics.baseline_latency_ms = future_baseline.result()
+                metrics.sliding_answer, metrics.sliding_latency_ms = future_sliding.result()
+                metrics.session_mem_answer, metrics.session_mem_latency_ms_extra = (
+                    future_sm.result()
+                )
+                # session_mem_latency_ms 仅包含 retrieve_context 时间；
+                # 若希望总 latency 包含生成时间，可累加：
+                # metrics.session_mem_latency_ms += metrics.session_mem_latency_ms_extra
+        else:
+            metrics.baseline_latency_ms = 0.0
+            metrics.sliding_latency_ms = 0.0
+
+        # Judge 评分（串行）
         if run_accuracy and judge_client:
             # 三个回答各自 vs ground_truth
             if metrics.baseline_answer:
@@ -221,13 +276,14 @@ def run_session(
                         logger.warning("Judge vs sliding failed: %s", exc)
 
         logger.info(
-            "QA %s-%d | sm_tokens=%d (meta=%d hot_zone=%d cells=%d) | save_base=%.2f%% | save_slide=%.2f%%",
+            "QA %s-%d | sm_tokens=%d (meta=%d hot_zone=%d cells=%d internal=%d) | save_base=%.2f%% | save_slide=%.2f%%",
             metrics.session_id,
             metrics.question_id,
             metrics.session_mem_tokens,
             metrics.session_mem_meta_cell_tokens,
             metrics.session_mem_hot_zone_tokens,
             metrics.session_mem_activated_cell_count,
+            metrics.session_mem_internal_tokens,
             metrics.token_saving_rate_vs_baseline * 100,
             metrics.token_saving_rate_vs_sliding * 100,
         )
