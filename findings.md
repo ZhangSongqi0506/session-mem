@@ -39,6 +39,8 @@
 | ShortMemBuffer MVP 阶段不区分窗口 | 保证召回完整性，简化实现；未来会话 Cell >100 时再引入分级策略 |
 | Meta Cell（会话主旨单元）| 以少量额外 Token（约 400）换取全局主旨的确定性不丢，作为普通 Cell 检索的双保险 |
 | LoCoMo 评估采用 QA 级三向对比 | 同时对比全量历史、最近 N 轮滑窗、session-mem，精确测量 Token 节省率和准确率损失 |
+| benchmark 方法级并发（per-QA）| 单个 QA 内三种回答生成并行化，与 session 级并发正交，显著缩短 `--run_accuracy` 总耗时 |
+| LLM 回答指令统一注入 `_answer()` | 在 benchmark runner 层统一注入 system 硬指令，强制直接引用、抑制过度解读，不侵入 PromptAssembler/WorkingMemory 接口 |
 | 检索策略升级为双路独立召回 + RRF 融合 | 解决旧加权融合下关键词路径无独立召回能力的问题，向量与关键词各自召回后用 RRF 排名，更公平地合并两路信号 |
 | 向量检索分数阈值过滤 | 默认 0.3，剔除低质量向量候选，避免 Embedding 噪声污染 RRF 结果 |
 | 取消 `total_budget=8` 硬性截断 | 激活 Cell 数量由 `min_cells`/`max_cells` 动态上下限 + 实体共现门槛自然调节，给高相关后期 Cell 更多进入空间 |
@@ -109,7 +111,7 @@
     - Q41 "What was Gina's favorite dancing memory?" → Baseline 正确（regionals competition），session-mem 回答 "没有明确提到"
     - Q42 "What kind of dance piece did Gina's team perform?" → Baseline 正确（"Finding Freedom"），session-mem 回答 "没有提及"
     - 共性：缺失的后期 Cell（如 C_020 关于 Gina 的舞蹈奖杯/比赛）未被召回，而 C_001/C_002 等通用 Cell 占用了激活名额
-- **新修复计划（Phase 8.1 / 8.2 / 8.3）**：
+- **新修复计划（Phase 8.1 / 8.2 / 8.2.1 / 8.4 / 8.5）**：
   - **Phase 8.1**：
     1. **热区构建错误**：`_build_hot_zone()` 改为直接返回 `sen_buffer.turns` 全部内容，不预设 token 软上限（当前 Token 节省率 77.92% 有余量）。
     2. **benchmark 问题未进入热区**：废弃 `add_turn()+pop()` 方案（会触发语义边界检测污染 session），改为给 `retrieve_context()` 新增 `extra_turns` 参数临时注入问题。
@@ -123,8 +125,8 @@
     8. **检索参数配置化**：新建 `src/session_mem/config.py`，集中管理 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值（0.015）、MemorySystem 主阈值（0.015）等可调节参数，避免代码硬编码。
     - **代码变更**：`src/session_mem/config.py`（新建）、`hybrid_search.py`（重构为 `_vector_search` / `_keyword_search` / `_rrf_fuse`）、`memory_system.py`（阈值适配 RRF、删除总预算截断）、`tests/test_retrieval.py`（fixture 适配）。
     - **测试结果**：全部 102 个测试通过；black + ruff 通过。
-  - **Phase 8.3（条件执行）**：
-    9. **高频共现词惩罚**：若 8.1+8.2+8.2.1 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
+  - **Phase 8.3（已跳过）**：
+    9. ~~高频共现词惩罚~~：v3 benchmark（200 QA）显示准确率差距已降至 0.041（<0.05），Token 节省率 50.17%，核心指标均已达标。动态 IDF 惩罚收益有限且实现复杂，决定跳过，将资源投入 LLM 过度解读修复（Phase 8.5）。
   - **Hotfix（2026-04-16，语义边界检测 role fallback）**：
     - 服务器 benchmark（Phase 8.2.1 后）出现反常结果：所有 Cell 类型均为 `fragmented`，单 Cell 2200-2400 tokens，仅生成 4 个 Cell 即覆盖 369 轮对话。
     - 根因：`data_loader.py` 保留原始 speaker 名称导致 `boundary_detector.py` 向 LLM API 传入非标准 role（`Jon`/`Gina`），`should_split()` 返回空列表，语义切分完全失效，全部对话堆积到硬上限后被打包为巨大 `fragmented` Cell。
@@ -133,10 +135,15 @@
     - 服务器 benchmark（v2）显示 session-mem 准确率 0.275 vs baseline 0.465，差距 0.190。典型案例："What Jon thinks the ideal dance studio should look like?"（GT: by the water, natural light, Marley flooring）——召回的 11 个 Cell 中无一包含这三个关键特征。
     - 根因：关键词路仅扫描 `keywords` + `summary`，未覆盖 `raw_text` 原文，LLM 提取遗漏时关键词路完全失效；向量路 `VECTOR_SCORE_THRESHOLD = 0.6` 过于严格，把语义相关但 embedding 距离中等的 Cell 直接过滤。两路同时失效导致含精确答案的 Cell 被系统性漏掉。
     - 修复：`hybrid_search.py` 的 `keyword_scores()` 改为扫描 `raw_text`；`config.py` 中 `VECTOR_SCORE_THRESHOLD` 从 0.6 降至 0.3。全部 102 个测试通过。
-  - **Phase 8.4（待执行）**：
-    10. **benchmark 方法级并发优化**：当前 `locomo_runner.py` 中 baseline / sliding / session-mem 三种方式在同一个 QA 内串行执行 LLM 调用。改为在单个 QA 内用 `ThreadPoolExecutor` 并发请求三种回答的生成，等全部返回后再统一 Judge，显著缩短 `--run_accuracy` 时的 benchmark 总耗时。与已有的 `--max_workers` session 级并发正交叠加。
-  - **Phase 8.5（待执行）**：
-    11. **LLM 回答指令优化（抑制过度解读）**：服务器 benchmark（v3）显示核心指标已达标（准确率差距 0.041，Token 节省率 50.17%），但剩余 bad case 的主要根因已从"检索失败"转变为"LLM 生成过度解读"。qwen2.5:72b 在获得正确答案所在 Cell 后，倾向于进行文学化重构和推理扩展（如把 "to support his business growth" 扩展为 5 大段 "symbolic break from corporate identity"），而 Judge 模型更偏好直接引用原文的简洁回答。修复方向：在 Prompt 组装层增加硬指令，强制要求直接引用、禁止推断。
+  - **Phase 8.4（已完成）**：
+    10. **benchmark 方法级并发优化**：`locomo_runner.py` 中单个 QA 的 baseline / sliding / session-mem 三种回答生成改为 `ThreadPoolExecutor(max_workers=3)` 并发执行。`retrieve_context()` 仍串行以保留检索延迟指标，Judge 在三个回答返回后串行。与 `--max_workers` session 级并发正交叠加，显著缩短 `--run_accuracy` 时的 benchmark 总耗时。
+    - **代码变更**：`benchmarks/locomo_runner.py`（`_timed_answer` + `ThreadPoolExecutor`）、`tests/test_benchmark.py`。
+    - **验证结果**：全部 102 个测试通过；black + ruff 通过。
+  - **Phase 8.5（已完成）**：
+    11. **LLM 回答指令优化（抑制过度解读）**：在 `locomo_runner.py` 的 `_answer()` 中统一注入 system 硬指令： `"Based only on the provided context, answer directly and concisely. Quote the relevant sentence explicitly. Do not infer or over-interpret."`。baseline / sliding / session-mem 三种回答生成均受该指令约束，无需修改 `PromptAssembler` 或 `WorkingMemory.to_prompt()` 接口。
+    12. **内部 token 开销统计**：新增 `session_mem_internal_tokens` 字段，统计检索阶段 QueryRewriter prompt tokens + Embedding tokens，输出到 JSON 聚合结果与 `_report.txt`。
+    - **代码变更**：`benchmarks/locomo_runner.py`、`benchmarks/metrics.py`、`tests/test_benchmark.py`。
+    - **验证结果**：全部 102 个测试通过；black + ruff 通过；已提交 commit `5a33af9`。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

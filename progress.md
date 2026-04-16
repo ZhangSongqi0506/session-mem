@@ -5,6 +5,33 @@
 
 ## Session: 2026-04-16
 
+### Phase 8.4 + 8.5: benchmark 方法级并发 + LLM 回答指令优化 + 内部 token 统计
+- **Status:** complete（代码已修改、测试通过、已提交 commit `5a33af9`）
+- **Actions taken:**
+  1. 实施 **Phase 8.4**：在 `locomo_runner.py` 的 `run_session()` 内，将单个 QA 的 baseline / sliding / session-mem 三种回答生成改为 `ThreadPoolExecutor(max_workers=3)` 并发执行。
+     - `retrieve_context()` 仍保留在并发前串行执行，确保 `session_mem_latency_ms` 仅测量检索延迟。
+     - Judge 评分依赖三个回答全部返回，仍放在并发收集之后串行执行。
+     - 方法级并发与 session 级 `--max_workers` 并发正交叠加，显著缩短 `--run_accuracy` 时的 benchmark 总耗时。
+  2. 实施 **Phase 8.5**：在 `_answer()` 函数中统一注入 system 硬指令：
+     ```
+     Based only on the provided context, answer directly and concisely.
+     Quote the relevant sentence explicitly.
+     Do not infer or over-interpret.
+     ```
+     三种回答生成方式（baseline / sliding / session-mem）均经过 `_answer()`，因此统一受该指令约束，无需修改 `PromptAssembler` 或 `WorkingMemory.to_prompt()` 接口。
+  3. 补充 **内部 token 开销统计**：
+     - `metrics.py`：`QAMetrics` 新增 `session_mem_internal_tokens`，`EvaluationResult` 新增 `avg_session_mem_internal_tokens`。
+     - `locomo_runner.py`：在 session-mem 分支内估算 QueryRewriter prompt tokens（若触发重写条件）与 Embedding tokens，写入 `metrics.session_mem_internal_tokens`。
+     - `save_text_report()` 输出中增加 `Internal Tokens (retrieval): X tokens`。
+  4. 更新 `tests/test_benchmark.py`：补充对新字段 `session_mem_internal_tokens` 的断言，验证聚合指标和文本报告输出。
+  5. 全部 **102 个测试通过**；`black` + `ruff` 通过。
+  6. 提交 commit `5a33af9`，更新三个计划文件。
+- **涉及文件:**
+  - `benchmarks/locomo_runner.py`
+  - `benchmarks/metrics.py`
+  - `tests/test_benchmark.py`
+- **Next step:** 服务器跑测验证 Phase 8.5 的 LLM 回答指令是否有效抑制过度解读（典型 case：conv-30-58），观察 benchmark 总耗时改善幅度。
+
 ### Phase 8: 运行优化与问题修复（计划更新，进入 Phase 8.1）
 - **Status:** in_progress（Phase 8.1 开始实施）
 - **Actions taken:**
