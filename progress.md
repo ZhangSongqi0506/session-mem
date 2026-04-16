@@ -43,6 +43,24 @@
   - `tests/test_retrieval.py`
 - **Next step:** 本地/服务器跑 checkpoint benchmark，评估 Phase 8.1+8.2+8.2.1 后的准确率差距，决定是否进入 Phase 8.3。
 
+### Phase 8.4: benchmark 方法级并发优化（待执行）
+- **Status:** pending（设计已确定，代码待修改）
+- **设计要点:**
+  1. **问题**：当前 `locomo_runner.py` 的 `run_session()` 内，每个 QA 的 baseline / sliding / session-mem 三种回答是**串行**调用 LLM 的。单个 QA 耗时 = `T_base + T_slide + T_mem`，当 `--run_accuracy` 开启时 benchmark 总耗时过长。
+  2. **方案**：将单个 QA 内的三种回答生成拆分为独立的并发任务（`ThreadPoolExecutor`），三种 prompt 互不依赖，可同时请求 LLM。等三个回答都返回后再统一做 Judge 评分。
+  3. **并发层级**：
+     - **已有**：session 级并发（`--max_workers`，多个 conversation 同时跑）
+     - **新增**：方法级并发（同一个 QA 内 baseline/sliding/session-mem 的 LLM 请求并发）
+     - 两层正交叠加，理论上可将单 QA 回答生成耗时从求和降为取最大值。
+  4. **注意事项**：
+     - 需确认内网 LLM 后端（qwen2.5:72b）能承受并发请求压力，必要时增加 `max_workers` 限制或重试逻辑。
+     - `SQLiteBackend` 已设置 `check_same_thread=False`，`MemorySystem.retrieve_context()` 在只读场景下线程安全。
+     - Judge 评分依赖三个回答全部返回，因此 Judge 步骤仍放在并发收集之后串行执行。
+- **涉及文件:**
+  - `benchmarks/locomo_runner.py`
+  - `tests/test_benchmark.py`
+- **Next step:** 进入 Phase 8.3/8.4 实施，或先跑 checkpoint benchmark 再决定优先级。
+
 ## Session: 2026-04-15
 
 ### Phase 8: 运行优化与问题修复（Meta Cell 膨胀修复后 benchmark 重跑与分析）

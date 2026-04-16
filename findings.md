@@ -123,6 +123,8 @@
     - **测试结果**：全部 102 个测试通过；black + ruff 通过。
   - **Phase 8.3（条件执行）**：
     9. **高频共现词惩罚**：若 8.1+8.2+8.2.1 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
+  - **Phase 8.4（待执行）**：
+    10. **benchmark 方法级并发优化**：当前 `locomo_runner.py` 中 baseline / sliding / session-mem 三种方式在同一个 QA 内串行执行 LLM 调用。改为在单个 QA 内用 `ThreadPoolExecutor` 并发请求三种回答的生成，等全部返回后再统一 Judge，显著缩短 `--run_accuracy` 时的 benchmark 总耗时。与已有的 `--max_workers` session 级并发正交叠加。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

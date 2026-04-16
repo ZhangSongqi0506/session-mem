@@ -212,6 +212,11 @@ Phase 7
     8. [x] **P2 - 检索参数配置化**：新建 `src/session_mem/config.py`，将 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值、`MemorySystem` 主阈值等可调节参数集中管理，避免代码硬编码。
   - **Phase 8.3**（条件执行）
     6. [ ] **P2 - 关键词匹配对通用词过于敏感**：若 Phase 8.1+8.2 后准确率差距仍 ≥0.05，实施 session-level 高频共现词惩罚（动态 IDF 加权 Jaccard）。
+  - **Phase 8.4**（待执行）
+    7. [ ] **P1 - benchmark 方法级并发优化**：当前 `locomo_runner.py` 中 baseline / sliding / session-mem 三种方式在同一个 QA 内串行执行 LLM 调用，导致单个 QA 耗时较长。改为在一个 QA 内对三种回答生成做并发调用（`ThreadPoolExecutor`），等三个回答都返回后再统一 Judge，显著缩短 benchmark 总耗时。
+    - **涉及代码**：`benchmarks/locomo_runner.py`、`tests/test_benchmark.py`
+    - **并发策略**：方法级并发（per-QA 内 baseline/sliding/session-mem 同时请求 LLM），与已有的 session 级并发（`--max_workers`）正交叠加。
+    - **注意事项**：需确保 LLM 后端（内网 qwen2.5:72b）能承受并发请求压力，必要时增加重试或降级逻辑。
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
