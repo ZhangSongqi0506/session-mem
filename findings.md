@@ -144,6 +144,10 @@
     12. **内部 token 开销统计**：新增 `session_mem_internal_tokens` 字段，统计检索阶段 QueryRewriter prompt tokens + Embedding tokens，输出到 JSON 聚合结果与 `_report.txt`。
     - **代码变更**：`benchmarks/locomo_runner.py`、`benchmarks/metrics.py`、`tests/test_benchmark.py`。
     - **验证结果**：全部 102 个测试通过；black + ruff 通过；已提交 commit `5a33af9`。
+  - **Phase 8.6（待执行）**：
+    13. **关键词检索升级为 BM25**：当前 `hybrid_search.py` 的 `keyword_scores()` 使用集合 Jaccard，仅判断 token 是否"存在"，缺少 TF/IDF 和长度归一化。升级为 BM25 后，通用高频词（如 "Jon"、"dance"）因 IDF 低而被自然降权，稀有词（如 "Marley"、"regionals"）获得更高区分度，有望进一步修复剩余的检索失败型 bad case。
+    - **代码变更**：`src/session_mem/retrieval/hybrid_search.py`、`src/session_mem/config.py`、`tests/test_retrieval.py`。
+    - **执行条件**：待 Phase 8.5 服务器 benchmark 验证后，若准确率差距仍 ≥0.03 再启动。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

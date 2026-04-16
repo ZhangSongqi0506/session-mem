@@ -5,6 +5,25 @@
 
 ## Session: 2026-04-16
 
+### Phase 8.6: 关键词检索升级为 BM25（计划已确立）
+- **Status:** pending（计划已写入三个计划文件，待 Phase 8.5 benchmark 验证后决定是否执行）
+- **Actions taken:**
+  1. 分析当前 `hybrid_search.py` 的 `keyword_scores()` 实现：使用集合 Jaccard，仅判断 query token 是否在 Cell 中出现，不统计词频、不做 IDF 降权、没有长度归一化。
+  2. 确认 BM25 升级的收益点：
+     - **TF**：同一 token 在 Cell 中出现多次，相关性分数更高。
+     - **IDF**："Jon"、"dance" 等几乎每个 Cell 都有的高频词权重被压低；"Marley"、"regionals" 等稀有词权重提升，有助于抑制早期通用背景 Cell 的虚高得分。
+     - **长度归一化**：避免长 `fragmented` Cell 因 token 多而在集合匹配中天然占便宜。
+  3. 拟定实施要点：
+     - 在 `HybridSearcher.keyword_scores()` 内基于 `cell_store.list_by_session` 动态计算 session-level IDF。
+     - 替换 Jaccard 为 BM25 分数，参数 k1=1.5、b=0.75，写入 `RetrievalConfig`。
+     - 保留 `entities` 的 `entity_bonus` 作为后处理加权项。
+  4. 同步更新 `task_plan.md`、`findings.md`、`progress.md` 三个计划文件。
+- **涉及文件:**
+  - `src/session_mem/retrieval/hybrid_search.py`
+  - `src/session_mem/config.py`
+  - `tests/test_retrieval.py`
+- **Next step:** 待 Phase 8.5 服务器 benchmark 跑测后，若准确率差距仍 ≥0.03，则启动 BM25 替换开发。
+
 ### Phase 8.4 + 8.5: benchmark 方法级并发 + LLM 回答指令优化 + 内部 token 统计
 - **Status:** complete（代码已修改、测试通过、已提交 commit `5a33af9`）
 - **Actions taken:**
