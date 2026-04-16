@@ -28,20 +28,20 @@
      - 全部 102 个测试通过；black + ruff 通过。
 - **Next step:** 本地/服务器跑 checkpoint benchmark（200 QA），评估 Phase 8.1+8.2 后的准确率差距，决定是否进入 Phase 8.3。
 
-### Phase 8.2.1: 检索策略升级（计划已确定，待执行）
-- **Status:** pending（设计已确认，代码待修改）
-- **设计要点:**
-  1. **双路独立召回 + RRF 融合**：`HybridSearcher` 新增 `_vector_search()` 和 `_keyword_search()` 两路独立召回，通过 `_rrf_fuse()` 使用 RRF 公式融合排名，替代旧的加权融合（`0.75*vector + 0.25*keyword`）。
-  2. **向量检索阈值**：`_vector_search()` 中仅保留 `vector_score >= vector_score_threshold`（默认 0.3）的候选，过滤低质量向量结果。
-  3. **取消 `total_budget=8` 截断**：`MemorySystem.retrieve_context()` 删除最终总预算截断逻辑，`selected` 仍受 `max_cells` 动态上限约束，`linked_prev` 和实体共现自然追加。
-  4. **参数配置化**：新建 `src/session_mem/config.py`，集中管理 RRF k 值、各路 top_k、向量阈值、RRF fallback 阈值（0.015）、MemorySystem 主阈值（0.015）等参数。
-  5. **实体共现门槛同步**：`fused_score >= 0.4` 改为 `rrf_score >= threshold`（与主搜索一致），避免硬编码分数在不同尺度下失效。
+### Phase 8.2.1: 检索策略升级（双路召回 + RRF 融合 + 配置化参数）
+- **Status:** complete（代码已修改并推送）
+- **Actions taken:**
+  1. 新建 `src/session_mem/config.py`，定义 `RetrievalConfig` 集中管理 RRF k 值（60）、双路 top_k（50）、fallback top_k（100）、向量分数阈值（0.3）、RRF fallback 阈值（0.015）、MemorySystem 主阈值（0.015）。
+  2. 重构 `hybrid_search.py`：删除旧的 `_fusion_search()` 加权融合逻辑，新增 `_vector_search()` 和 `_keyword_search()` 实现两路独立召回，通过 `_rrf_fuse()` 使用 RRF 公式 `score = 1/(k + rank)` 融合排名；向量检索增加 `vector_score >= VECTOR_SCORE_THRESHOLD` 阈值过滤；fallback 触发条件改为 Top-1 RRF score < 0.015。
+  3. 更新 `memory_system.py`：`retrieve_context()` 删除 `total_budget=8` 最终硬性截断；主阈值从 0.55 改为 `RetrievalConfig.MEMORY_SYSTEM_THRESHOLD`（0.015），适配 RRF 分数尺度；实体共现门槛从 `fused_score >= 0.4` 同步改为 `rrf_score >= threshold`；最终 `activated` 按 RRF 分数降序排列后组装 `WorkingMemory`。
+  4. 适配 `tests/test_retrieval.py`：调整 `FakeVectorIndex` fixture 以匹配新的 `top_k=50` 向量召回参数；修正一个因向量阈值过滤而失效的测试 fixture（将 unrealistic distance 5.0 改为 1.0）。
+  5. 全部 **102 个测试通过**；black + ruff 通过。
 - **涉及文件:**
   - `src/session_mem/config.py`（新建）
   - `src/session_mem/retrieval/hybrid_search.py`
   - `src/session_mem/core/memory_system.py`
-  - `tests/test_retrieval.py`、`tests/test_memory_system.py`
-- **Next step:** 执行代码修改、回归测试、更新 `findings.md`。
+  - `tests/test_retrieval.py`
+- **Next step:** 本地/服务器跑 checkpoint benchmark，评估 Phase 8.1+8.2+8.2.1 后的准确率差距，决定是否进入 Phase 8.3。
 
 ## Session: 2026-04-15
 

@@ -39,6 +39,10 @@
 | ShortMemBuffer MVP 阶段不区分窗口 | 保证召回完整性，简化实现；未来会话 Cell >100 时再引入分级策略 |
 | Meta Cell（会话主旨单元）| 以少量额外 Token（约 400）换取全局主旨的确定性不丢，作为普通 Cell 检索的双保险 |
 | LoCoMo 评估采用 QA 级三向对比 | 同时对比全量历史、最近 N 轮滑窗、session-mem，精确测量 Token 节省率和准确率损失 |
+| 检索策略升级为双路独立召回 + RRF 融合 | 解决旧加权融合下关键词路径无独立召回能力的问题，向量与关键词各自召回后用 RRF 排名，更公平地合并两路信号 |
+| 向量检索分数阈值过滤 | 默认 0.3，剔除低质量向量候选，避免 Embedding 噪声污染 RRF 结果 |
+| 取消 `total_budget=8` 硬性截断 | 激活 Cell 数量由 `min_cells`/`max_cells` 动态上下限 + 实体共现门槛自然调节，给高相关后期 Cell 更多进入空间 |
+| 检索参数集中配置化 | 全部阈值、top_k、RRF k 值抽取到 `RetrievalConfig`，便于实验调参与服务器端快速迭代 |
 
 ## Architecture Notes
 ### 数据库 Schema 设计（SQLiteBackend）
@@ -111,10 +115,12 @@
   - **Phase 8.2**：
     4. **检索策略阈值法重构**：取消固定 `top_k=2`，改用 `search_with_scores()` 获取全部候选，以 `threshold=0.55` 筛选，配合动态上下限 `min_cells = max(2, min(5, total_cells // 10))`、`max_cells = max(min_cells + 1, min(8, total_cells // 3))`，最终统一按 `fused_score` 截断到 `total_budget=8`。
     5. **实体共现优化**：候选需同时满足 `keyword_score > 0` 和 `fused_score >= 0.4`，按相关性排序后取前 3 个，阻止早期通用 Cell 无条件混入。
-  - **Phase 8.2.1**（设计已确认，待执行）：
+  - **Phase 8.2.1**（已完成，2026-04-16）：
     6. **双路独立召回 + RRF 融合**：`HybridSearcher` 从"先向量检索再关键词加权融合"改为向量路与关键词路各自独立召回，再用 RRF（Reciprocal Rank Fusion）融合排名。向量路增加 `vector_score_threshold`（默认 0.3）过滤低质量候选。
     7. **取消最终总预算截断**：移除 `MemorySystem.retrieve_context()` 中 `total_budget=8` 的硬性截断，激活 Cell 数量由动态上下限和实体共现门槛自然调节。
     8. **检索参数配置化**：新建 `src/session_mem/config.py`，集中管理 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值（0.015）、MemorySystem 主阈值（0.015）等可调节参数，避免代码硬编码。
+    - **代码变更**：`src/session_mem/config.py`（新建）、`hybrid_search.py`（重构为 `_vector_search` / `_keyword_search` / `_rrf_fuse`）、`memory_system.py`（阈值适配 RRF、删除总预算截断）、`tests/test_retrieval.py`（fixture 适配）。
+    - **测试结果**：全部 102 个测试通过；black + ruff 通过。
   - **Phase 8.3（条件执行）**：
     9. **高频共现词惩罚**：若 8.1+8.2+8.2.1 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
 

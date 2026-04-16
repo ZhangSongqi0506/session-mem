@@ -206,10 +206,10 @@ Phase 7
   - **Phase 8.2**（已完成）
     4. [x] **P0 - 实体共现召回无关通用 Cell**：`retrieve_context()` 中实体共现激活无条件拉入早期背景 Cell。优化为：实体共现候选需满足 `keyword score > 0` 且 `fused_score >= 0.4`，并按相关性排序后取前 3 个。
     5. [x] **P1 - 激活 Cell 缺少二次相关性截断 + 取消固定 top_k**：当前 `top_k=2` + `linked_prev` + `extra_limit=3` 过于刚性。改为阈值法（`threshold=0.55`，动态上下限 `min_cells`/`max_cells`），最终统一按 `fused_score` 截断到 `total_budget=8`。
-  - **Phase 8.2.1**（待执行）
-    6. [ ] **P0 - 检索策略升级为真正的双路召回 + RRF 融合**：`HybridSearcher` 从"先向量检索再对向量结果做关键词加权融合"改为向量路与关键词路各自独立召回，再用 RRF 融合排名。向量路增加 `vector_score_threshold` 过滤低质量候选。
-    7. [ ] **P1 - 取消最终总预算截断**：移除 `MemorySystem.retrieve_context()` 中 `total_budget=8` 的硬性截断逻辑，激活 Cell 数量由动态上下限和实体共现门槛自然调节。
-    8. [ ] **P2 - 检索参数配置化**：新建 `src/session_mem/config.py`，将 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值、`MemorySystem` 主阈值等可调节参数集中管理，避免代码硬编码。
+  - **Phase 8.2.1**（已完成）
+    6. [x] **P0 - 检索策略升级为真正的双路召回 + RRF 融合**：`HybridSearcher` 从"先向量检索再对向量结果做关键词加权融合"改为向量路与关键词路各自独立召回，再用 RRF 融合排名。向量路增加 `vector_score_threshold` 过滤低质量候选。
+    7. [x] **P1 - 取消最终总预算截断**：移除 `MemorySystem.retrieve_context()` 中 `total_budget=8` 的硬性截断逻辑，激活 Cell 数量由动态上下限和实体共现门槛自然调节。
+    8. [x] **P2 - 检索参数配置化**：新建 `src/session_mem/config.py`，将 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值、`MemorySystem` 主阈值等可调节参数集中管理，避免代码硬编码。
   - **Phase 8.3**（条件执行）
     6. [ ] **P2 - 关键词匹配对通用词过于敏感**：若 Phase 8.1+8.2 后准确率差距仍 ≥0.05，实施 session-level 高频共现词惩罚（动态 IDF 加权 Jaccard）。
 - **涉及代码**:
