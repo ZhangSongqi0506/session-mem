@@ -16,7 +16,7 @@ class RetrievalConfig:
     FALLBACK_KEYWORD_SEARCH_TOP_K: int = 100
 
     # 向量检索分数阈值（math.exp(-dist) 必须 >= 此值）
-    VECTOR_SCORE_THRESHOLD: float = 0.3
+    VECTOR_SCORE_THRESHOLD: float = 0.6
 
     # RRF fallback 触发阈值（Top-1 RRF score < 此值时扩大召回）
     RRF_FALLBACK_THRESHOLD: float = 0.015

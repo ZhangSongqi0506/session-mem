@@ -236,9 +236,9 @@ class TestHybridSearcher:
         store = FakeCellStore([cell])
         vector_index = FakeVectorIndex(
             {
-                ("1.0", 2): [("C_001", 1.0)],
-                ("1.0", 50): [("C_001", 1.0)],
-                ("1.0", 100): [("C_001", 1.0)],
+                ("1.0", 2): [("C_001", 0.5)],
+                ("1.0", 50): [("C_001", 0.5)],
+                ("1.0", 100): [("C_001", 0.5)],
             }
         )
         searcher = HybridSearcher(
