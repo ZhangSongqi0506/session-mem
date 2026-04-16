@@ -73,8 +73,6 @@ session-mem-main/
 
 | Phase | 状态 | 说明 |
 |-------|------|------|
-| Phase | 状态 | 说明 |
-|-------|------|------|
 | Phase 1 | 已完成 | 项目脚手架与核心接口设计 |
 | Phase 2 | 已完成 | 存储层完善与数据库构建（SQLite + sqlite-vec，5 张表，1024 维向量） |
 | Phase 3 | 已完成 | SenMemBuffer 实现与语义边界检测（gap / hard limit / soft limit） |
@@ -82,8 +80,14 @@ session-mem-main/
 | Phase 4.1 | 已完成 | 多切分点语义边界检测落地：LLM 返回切分点索引列表，支持一次检测生成多个 Cell |
 | Phase 5 | 已完成 | 检索策略与 Working Memory（查询重写、Hybrid Search、Meta Cell 前置） |
 | Phase 6 | 已完成 | 边界情况与异常处理（linked_prev 因果链、实体共现激活） |
-| Phase 7 | 进行中 | LoCoMo 验证与测试（benchmark 已适配真实数据，支持全量/滑窗/session-mem 三向对比，待跑测） |
-| Phase 8 | 框架已搭建 | 运行优化与问题修复（待服务器跑测后填充具体问题） |
+| Phase 7 | 已完成 | LoCoMo 验证与测试（benchmark 已适配真实数据，支持全量/滑窗/session-mem 三向对比） |
+| Phase 8 | 已完成 | 运行优化与问题修复（服务器跑测问题全部修复，核心指标达标） |
+| Phase 8.1 | 已完成 | 热区构建修复 + benchmark 保留原始 speaker 名称 |
+| Phase 8.2 / 8.2.1 | 已完成 | 检索策略重构为双路独立召回 + RRF 融合，参数配置化，取消总预算硬截断 |
+| Phase 8.4 | 已完成 | benchmark 方法级并发优化（per-QA 三回答并发） |
+| Phase 8.5 | 已完成 | LLM 回答指令优化（抑制过度解读）+ 内部 token 开销统计 |
+| Phase 8.6 | 已完成 | 关键词检索升级为 BM25（k1=1.5, b=0.75，session-level 动态 IDF） |
+| Phase 8.7 | 已完成 | 时序信息闭环优化（activated_cells 按 timestamp_start 升序 + 时间戳注入 Prompt） |
 
 ## 技术栈
 
@@ -116,8 +120,9 @@ session-mem-main/
    - `avg_token_saving_rate_vs_baseline`：相比**全量历史**的平均 Token 节省率
    - `avg_token_saving_rate_vs_sliding`：相比**滑窗基线**的平均 Token 节省率
    - `avg_session_mem_latency_ms` / `median_session_mem_latency_ms` / `p95_session_mem_latency_ms`：session-mem 检索延迟
-   - `avg_judge_score_vs_baseline`：相比全量历史的 LLM-as-Judge 平均评分
-   - `avg_judge_score_vs_sliding`：相比滑窗基线的 LLM-as-Judge 平均评分
+   - `avg_baseline_judge_score` / `avg_sliding_judge_score` / `avg_session_mem_judge_score`：三种方式各自 vs ground_truth 的独立 Judge 平均分
+   - `avg_judge_score_vs_baseline` / `avg_judge_score_vs_sliding`：session-mem 与 baseline/sliding 的交叉对比 Judge 分
+   - `session_mem_meta_cell_tokens` / `session_mem_hot_zone_tokens` / `session_mem_internal_tokens`：session-mem 内部 Token 构成拆解
 
 ### 服务器跑测注意事项
 - **LLM `response_format` 兼容性**：部分 vLLM/OneAPI 代理不支持 `json_schema` 类型的 `response_format`。`QwenClient` 默认 `supports_json_schema=False`，会自动跳过该参数，完全依赖 Prompt 约束 + `parser.py` fallback 解析 JSON。若你的后端明确支持 `json_schema`，可在初始化 `QwenClient` 时显式设置 `supports_json_schema=True`。
@@ -127,4 +132,11 @@ session-mem-main/
 
 - **2026-04-14** 完成 Phase 4.1：语义边界检测支持**多切分点索引**（`[3, 6]`），一次检测可生成多个 Cell。全部 54 个测试通过。
 - **2026-04-15 上午** 完成 Phase 5-6：检索策略与边界异常处理全部落地，83 个测试通过。
-- **2026-04-15 下午** 完成 Phase 7 benchmark 开发：适配真实 `locomo10.json` 数据结构，将多个 session 合并为单一长会话，支持**全量历史/滑窗/session-mem 三向对比**（Token 数、延迟、准确率）。新增 `tests/test_benchmark.py`（11 个测试），全部 94 个测试通过，待服务器跑测。
+- **2026-04-15 下午** 完成 Phase 7 benchmark 开发：适配真实 `locomo10.json` 数据结构，将多个 session 合并为单一长会话，支持**全量历史/滑窗/session-mem 三向对比**（Token 数、延迟、准确率）。新增 `tests/test_benchmark.py`（11 个测试），全部 94 个测试通过。
+- **2026-04-16** 完成 Phase 8 全部优化：
+  - Phase 8.1-8.2.1：修复服务器跑测发现的语义边界检测 role 失真、检索召回失败、检索策略重构为双路独立召回 + RRF 融合。
+  - Phase 8.4：benchmark 方法级并发优化，单个 QA 内三种回答生成并行化。
+  - Phase 8.5：统一注入 system 硬指令抑制 LLM 过度解读，新增内部 token 开销统计。
+  - Phase 8.6：关键词检索升级为 **BM25**（k1=1.5, b=0.75），解决通用词虚高和长 Cell 占便宜问题。
+  - Phase 8.7：**时序信息闭环优化**，`activated_cells` 按 `timestamp_start` 升序排列，`to_prompt()` 注入 `[timestamp_start - timestamp_end]` 时间戳前缀。
+  - 全部 **106 个测试通过**，`black` + `ruff` 通过，核心指标达标（Token 节省率 >60%）。
