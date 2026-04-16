@@ -111,8 +111,12 @@
   - **Phase 8.2**：
     4. **检索策略阈值法重构**：取消固定 `top_k=2`，改用 `search_with_scores()` 获取全部候选，以 `threshold=0.55` 筛选，配合动态上下限 `min_cells = max(2, min(5, total_cells // 10))`、`max_cells = max(min_cells + 1, min(8, total_cells // 3))`，最终统一按 `fused_score` 截断到 `total_budget=8`。
     5. **实体共现优化**：候选需同时满足 `keyword_score > 0` 和 `fused_score >= 0.4`，按相关性排序后取前 3 个，阻止早期通用 Cell 无条件混入。
+  - **Phase 8.2.1**（设计已确认，待执行）：
+    6. **双路独立召回 + RRF 融合**：`HybridSearcher` 从"先向量检索再关键词加权融合"改为向量路与关键词路各自独立召回，再用 RRF（Reciprocal Rank Fusion）融合排名。向量路增加 `vector_score_threshold`（默认 0.3）过滤低质量候选。
+    7. **取消最终总预算截断**：移除 `MemorySystem.retrieve_context()` 中 `total_budget=8` 的硬性截断，激活 Cell 数量由动态上下限和实体共现门槛自然调节。
+    8. **检索参数配置化**：新建 `src/session_mem/config.py`，集中管理 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值（0.015）、MemorySystem 主阈值（0.015）等可调节参数，避免代码硬编码。
   - **Phase 8.3（条件执行）**：
-    6. **高频共现词惩罚**：若 8.1+8.2 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
+    9. **高频共现词惩罚**：若 8.1+8.2+8.2.1 后准确率差距仍 ≥0.05，实施 session-level 动态词频统计（出现 Cell 数 > 60% 的词权重降为 0.3），通过加权 Jaccard 提高特异性关键词优先级。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem
