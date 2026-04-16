@@ -5,6 +5,7 @@ from typing import Any
 
 import re
 
+from session_mem.config import RetrievalConfig
 from session_mem.core.buffer import SenMemBuffer, ShortMemBuffer, Turn
 from session_mem.core.cell import MemoryCell
 from session_mem.core.cell_generator import CellGenerator
@@ -127,7 +128,7 @@ class MemorySystem:
         score_map: dict[str, float] = {cid: score for cid, score in candidate_scores}
 
         # 4. 阈值筛选 + 动态上下限
-        threshold = 0.55
+        threshold = RetrievalConfig.MEMORY_SYSTEM_THRESHOLD
         selected_ids = [cid for cid, score in candidate_scores if score >= threshold]
 
         total_cells = len(self.cell_store.list_by_session(self.session_id))
@@ -183,7 +184,7 @@ class MemorySystem:
                 for rc_id, rc in potential_map.items():
                     k_score = keyword_score_map.get(rc_id, 0.0)
                     f_score = score_map.get(rc_id, 0.0)
-                    if k_score > 0 and f_score >= 0.4:
+                    if k_score > 0 and f_score >= RetrievalConfig.MEMORY_SYSTEM_THRESHOLD:
                         entity_candidates.append((rc_id, f_score))
 
             # 去重并按 fused_score 降序，取前 extra_limit
@@ -198,15 +199,8 @@ class MemorySystem:
                     activated.append(cell)
                     seen.add(cell.id)
 
-        # 8. 最终总预算截断
-        total_budget = 8
-        final_cells: list[MemoryCell] = []
-        sorted_ids = sorted(seen, key=lambda cid: score_map.get(cid, 0.0), reverse=True)
-        for cid in sorted_ids[:total_budget]:
-            for cell in activated:
-                if cell.id == cid:
-                    final_cells.append(cell)
-                    break
+        # 8. 按 RRF 分数降序排列 activated cells（取消总预算硬截断）
+        activated.sort(key=lambda c: score_map.get(c.id, 0.0), reverse=True)
 
         # 9. 获取 active Meta Cell
         meta_cell: MemoryCell | None = None
@@ -218,7 +212,7 @@ class MemorySystem:
         # 10. 组装
         wm = WorkingMemory(
             hot_zone=hot_zone,
-            activated_cells=final_cells,
+            activated_cells=activated,
             query=rewritten_query,
             meta_cell=meta_cell,
         )
