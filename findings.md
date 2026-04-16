@@ -148,6 +148,16 @@
     13. **关键词检索升级为 BM25**：当前 `hybrid_search.py` 的 `keyword_scores()` 使用集合 Jaccard，仅判断 token 是否"存在"，缺少 TF/IDF 和长度归一化。升级为 BM25 后，通用高频词（如 "Jon"、"dance"）因 IDF 低而被自然降权，稀有词（如 "Marley"、"regionals"）获得更高区分度，有望进一步修复剩余的检索失败型 bad case。
     - **代码变更**：`src/session_mem/retrieval/hybrid_search.py`、`src/session_mem/config.py`、`tests/test_retrieval.py`。
     - **执行条件**：待 Phase 8.5 服务器 benchmark 验证后，若准确率差距仍 ≥0.03 再启动。
+  - **Phase 8.7（待执行）**：
+    14. **时序信息闭环优化**：Cell 本身已有 `timestamp_start`/`timestamp_end`，但 `memory_system.py:retrieve_context()` 最终按 RRF 分数降序组装 `activated_cells`，`working_memory.py:to_prompt()` 也未把时间戳写入 Prompt。这导致：
+      - LLM 无法判断 Cell 的先后顺序，叙事链被高分通用 Cell 前置打乱；
+      - 用户问 "When did..." 时，LLM 看不到时间锚点，只能盲猜；
+      - `gap_detected()` 和 Cell 生成阶段的时间戳信号在最后一步丢失，未能形成闭环。
+    - **修复方案**：
+      1. `memory_system.py`：筛选后的 `activated_cells` 改按 `timestamp_start` 升序排列，恢复自然时间线；`linked_prev` 因果链也会按时间自然展开。
+      2. `working_memory.py`：`to_prompt()` 给每个 Cell 的 `raw_text` 前加上 `[timestamp_start - timestamp_end]\n` 前缀，让 LLM 感知绝对时间。
+      3. `locomo_runner.py`：`_answer()` 的 system 指令追加 `"If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."`。
+    - **代码变更**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_memory_system.py`、`tests/test_retrieval.py`。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

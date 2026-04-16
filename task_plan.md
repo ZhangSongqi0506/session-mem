@@ -231,6 +231,12 @@ Phase 8
       1. 在 `HybridSearcher` 内维护 session-level 词频统计（或基于当前 `cell_store.list_by_session` 动态计算 IDF）。
       2. 将 `keyword_scores()` 的 Jaccard 替换为 BM25 分数计算，保留 `entities` 的 entity_bonus 作为后处理加权。
       3. 参数建议：k1=1.5，b=0.75，作为可配置项写入 `RetrievalConfig`。
+  - **Phase 8.7**（待执行）
+    11. [ ] **P0 - activated_cells 按时间顺序组装 + Cell 时间戳注入 Prompt + 时间类问题强制回答绝对时间**：
+      1. `memory_system.py:retrieve_context()` 中最终 `activated_cells` 改为按 `timestamp_start` 升序排列，恢复自然叙事顺序，避免高分通用 Cell 因 RRF 排序被前置而淹没具体答案 Cell。
+      2. `working_memory.py:to_prompt()` 中给每个 `activated_cell` 的 `raw_text` 前增加 `[timestamp_start - timestamp_end]` 前缀，让 LLM 感知各段内容的绝对时间锚点。
+      3. `locomo_runner.py:_answer()` 的 system 指令增加一条补充："If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."
+    - **涉及代码**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_memory_system.py`、`tests/test_retrieval.py`
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`
