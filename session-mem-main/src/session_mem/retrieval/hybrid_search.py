@@ -47,7 +47,18 @@ class HybridSearcher:
         if not fallback:
             return [cell_id for cell_id, _ in fused[:top_k]]
 
-        return self._fallback_search(query, top_k)
+        return [cell_id for cell_id, _ in self._fallback_search(query, top_k)[:top_k]]
+
+    def search_with_scores(self, query: str, fallback: bool = True) -> list[tuple[str, float]]:
+        """执行融合搜索并返回全部候选及其 fused_score（按分数降序）。"""
+        fused = self._fusion_search(query, top_k=100)
+        if fused and fused[0][1] >= 0.6:
+            return fused
+
+        if not fallback:
+            return fused
+
+        return self._fallback_search(query, top_k=100)
 
     def _embed_query(self, query: str) -> list[float] | None:
         """获取查询的 embedding 向量。"""
@@ -80,7 +91,7 @@ class HybridSearcher:
                 candidates.append(cell)
 
         vector_scores = {cell_id: math.exp(-dist) for cell_id, dist in vector_results}
-        keyword_scores = self._keyword_scores(query, candidates)
+        keyword_scores = self.keyword_scores(query, candidates)
 
         fused_scores: dict[str, float] = {}
         for cid in candidate_ids:
@@ -90,8 +101,8 @@ class HybridSearcher:
 
         return sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
 
-    def _fallback_search(self, query: str, top_k: int) -> list[str]:
-        """低置信度 fallback：放宽范围 + 全量关键词扫描 + RRF 合并。"""
+    def _fallback_search(self, query: str, top_k: int) -> list[tuple[str, float]]:
+        """低置信度 fallback：放宽范围 + 全量关键词扫描 + RRF 合并，返回带分数的列表。"""
         query_emb = self._embed_query(query)
         vector_results: list[tuple[str, float]] = []
         if query_emb is not None:
@@ -111,9 +122,9 @@ class HybridSearcher:
             rrf_scores[cell_id] += 1.0 / (60 + rank)
 
         sorted_results = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
-        return [cell_id for cell_id, _ in sorted_results[:top_k]]
+        return sorted_results
 
-    def _keyword_scores(self, query: str, cells: list) -> dict[str, float]:
+    def keyword_scores(self, query: str, cells: list) -> dict[str, float]:
         """为每个 Cell 计算关键词匹配分数（Jaccard + 实体奖励）。"""
         query_tokens = set(query.lower().split())
         if not query_tokens:

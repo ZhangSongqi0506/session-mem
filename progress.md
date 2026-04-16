@@ -22,7 +22,11 @@
      - `data_loader.py`：保留原始 speaker 名称，不再强制映射 user/assistant。
      - 修复 `test_benchmark.py` 断言以匹配新行为。
   5. 全部 26 个相关测试通过；black + ruff 通过。
-- **Next step:** 实施 Phase 8.2（检索策略阈值法重构与实体共现优化）。
+  6. 实施 Phase 8.2：
+     - `hybrid_search.py`：新增 `search_with_scores()` 返回全部候选及 fused_score；`_fallback_search()` 改为返回带分数的列表；`_keyword_scores` 提升为公共方法 `keyword_scores()`。
+     - `memory_system.py`：`retrieve_context()` 检索逻辑重构为阈值法（`threshold=0.55`）+ 动态上下限（`min_cells`/`max_cells`）+ 总预算 8 截断；实体共现激活增加双重门槛（`keyword_score > 0` 且 `fused_score >= 0.4`），并按相关性排序取前 3。
+     - 全部 102 个测试通过；black + ruff 通过。
+- **Next step:** 本地/服务器跑 checkpoint benchmark（200 QA），评估 Phase 8.1+8.2 后的准确率差距，决定是否进入 Phase 8.3。
 
 ## Session: 2026-04-15
 

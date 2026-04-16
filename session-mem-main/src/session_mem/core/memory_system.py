@@ -119,22 +119,37 @@ class MemorySystem:
         # 2. 查询重写
         rewritten_query = self.query_rewriter.rewrite(query, hot_zone)
 
-        # 3. 双路召回
-        candidate_ids: list[str] = []
+        # 3. 双路召回（带分数的全部候选）
+        candidate_scores: list[tuple[str, float]] = []
         if self.hybrid:
-            candidate_ids = self.hybrid.search(rewritten_query, top_k=top_k)
+            candidate_scores = self.hybrid.search_with_scores(rewritten_query)
 
-        # 4. 全量回溯原文
+        score_map: dict[str, float] = {cid: score for cid, score in candidate_scores}
+
+        # 4. 阈值筛选 + 动态上下限
+        threshold = 0.55
+        selected_ids = [cid for cid, score in candidate_scores if score >= threshold]
+
+        total_cells = len(self.cell_store.list_by_session(self.session_id))
+        min_cells = max(2, min(5, total_cells // 10))
+        max_cells = max(min_cells + 1, min(8, total_cells // 3))
+
+        if len(selected_ids) < min_cells:
+            selected_ids = [cid for cid, _ in candidate_scores[:min_cells]]
+        if len(selected_ids) > max_cells:
+            selected_ids = selected_ids[:max_cells]
+
+        # 5. 加载 selected Cells
         activated: list[MemoryCell] = []
         seen: set[str] = set()
-        for cid in candidate_ids[:top_k]:
+        for cid in selected_ids:
             cell = self.cell_store.get(cid)
             if cell and cell.id not in seen:
                 cell.raw_text = self.text_store.load(cid)
                 activated.append(cell)
                 seen.add(cell.id)
 
-        # 5. 因果链断裂防护：自动加载 linked_prev 关联 Cell
+        # 6. 因果链断裂防护：自动加载 linked_prev 关联 Cell
         for cell in list(activated):
             if cell.linked_prev and cell.linked_prev not in seen:
                 prev_cell = self.cell_store.get(cell.linked_prev)
@@ -143,34 +158,67 @@ class MemorySystem:
                     activated.append(prev_cell)
                     seen.add(prev_cell.id)
 
-        # 6. 实体共现激活：级联加载同实体关联 Cell（限制额外数量）
+        # 7. 实体共现激活（优化版：双重门槛）
         extra_limit = 3
-        extra_loaded = 0
-        for cell in list(activated):
-            for entity in cell.entities or []:
-                if extra_loaded >= extra_limit:
-                    break
-                related = self.cell_store.find_by_entity(self.session_id, entity)
-                for rc in related:
-                    if rc.id not in seen:
-                        rc.raw_text = self.text_store.load(rc.id)
-                        activated.append(rc)
-                        seen.add(rc.id)
-                        extra_loaded += 1
-                        if extra_loaded >= extra_limit:
-                            break
+        entity_candidates: list[tuple[str, float]] = []
 
-        # 7. 获取 active Meta Cell
+        # 收集所有已激活 Cell 的实体
+        all_entities: set[str] = set()
+        for cell in activated:
+            for entity in cell.entities or []:
+                all_entities.add(entity)
+
+        if all_entities and self.hybrid:
+            # 收集所有潜在实体共现候选
+            potential_map: dict[str, MemoryCell] = {}
+            for entity in all_entities:
+                for rc in self.cell_store.find_by_entity(self.session_id, entity):
+                    if rc.id not in seen:
+                        potential_map[rc.id] = rc
+
+            if potential_map:
+                keyword_score_map = self.hybrid.keyword_scores(
+                    rewritten_query, list(potential_map.values())
+                )
+                for rc_id, rc in potential_map.items():
+                    k_score = keyword_score_map.get(rc_id, 0.0)
+                    f_score = score_map.get(rc_id, 0.0)
+                    if k_score > 0 and f_score >= 0.4:
+                        entity_candidates.append((rc_id, f_score))
+
+            # 去重并按 fused_score 降序，取前 extra_limit
+            entity_candidates = sorted(
+                dict(entity_candidates).items(), key=lambda x: x[1], reverse=True
+            )[:extra_limit]
+
+            for cid, _ in entity_candidates:
+                cell = self.cell_store.get(cid)
+                if cell and cell.id not in seen:
+                    cell.raw_text = self.text_store.load(cid)
+                    activated.append(cell)
+                    seen.add(cell.id)
+
+        # 8. 最终总预算截断
+        total_budget = 8
+        final_cells: list[MemoryCell] = []
+        sorted_ids = sorted(seen, key=lambda cid: score_map.get(cid, 0.0), reverse=True)
+        for cid in sorted_ids[:total_budget]:
+            for cell in activated:
+                if cell.id == cid:
+                    final_cells.append(cell)
+                    break
+
+        # 9. 获取 active Meta Cell
         meta_cell: MemoryCell | None = None
         if self.meta_cell_store is not None:
             meta_cell = getattr(self.meta_cell_store, "get_active_meta_cell", lambda sid: None)(
                 self.session_id
             )
 
-        # 8. 组装
+        # 10. 组装
         wm = WorkingMemory(
             hot_zone=hot_zone,
-            activated_cells=activated,
+            activated_cells=final_cells,
             query=rewritten_query,
             meta_cell=meta_cell,
         )
