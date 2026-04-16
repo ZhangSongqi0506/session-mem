@@ -135,7 +135,7 @@ class HybridSearcher:
             cell_tokens: set[str] = set()
             for kw in cell.keywords or []:
                 cell_tokens.add(kw.lower())
-            for word in (cell.summary or "").lower().split():
+            for word in (cell.raw_text or "").lower().split():
                 cell_tokens.add(word)
 
             intersection = query_tokens & cell_tokens

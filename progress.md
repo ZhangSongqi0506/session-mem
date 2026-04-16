@@ -43,6 +43,21 @@
   - `tests/test_retrieval.py`
 - **Next step:** 本地/服务器跑 checkpoint benchmark，评估 Phase 8.1+8.2+8.2.1 后的准确率差距，决定是否进入 Phase 8.3。
 
+### Hotfix: 关键词路覆盖不足 + 向量阈值过高（2026-04-16）
+- **Status:** complete（代码已修改并推送）
+- **问题现象：**
+  - 服务器 benchmark（`locomo_phase821_2sess_10qa_v2.json`）中，session-mem 准确率 0.275，对比 baseline 0.465，差距 0.190。
+  - 典型失败案例："What Jon thinks the ideal dance studio should look like?"（GT: by the water, natural light, Marley flooring）——召回的 11 个 Cell 中没有任何一个提到这三个关键特征；"When did Melanie paint a sunrise?"（GT: 2022）——session-mem 回答 "Melanie did not paint a sunrise"。
+- **根因分析：**
+  - `hybrid_search.py` 的 `keyword_scores()` 仅扫描 Cell 的 `keywords` 和 `summary`，**完全不扫描 `raw_text` 原文**。当 LLM 生成 Cell 时漏掉关键短语（如 "Marley"、"sunrise"、"2022"），关键词路就完全失效。
+  - 向量路虽然基于 `raw_text` 的 embedding，但 `VECTOR_SCORE_THRESHOLD = 0.6` 过于严格，把大量语义相关但 embedding 距离中等的 Cell 直接过滤，连 RRF 融合的机会都没有。
+  - 两路同时失效时，包含精确答案的 Cell 被系统性漏掉，LLM 只能基于现有信息进行合理编造，导致准确率暴跌。
+- **修复动作：**
+  - `src/session_mem/retrieval/hybrid_search.py`：`keyword_scores()` 将 `summary` 扫描替换为 `raw_text` 扫描，确保原文中的关键短语（如 "Marley flooring"）能被关键词路匹配到。
+  - `src/session_mem/config.py`：`VECTOR_SCORE_THRESHOLD` 从 `0.6` 降至 `0.3`，让更多语义相关候选进入 RRF 融合，由融合排名决定去留。
+- **验证结果：** 全部 102 个测试通过；black + ruff 通过。
+- **Next step:** 重跑服务器 benchmark（v3）验证准确率是否回升。
+
 ### Hotfix: 语义边界检测因非标准 role 失效（2026-04-16）
 - **Status:** complete（代码已修改并推送）
 - **问题现象：**

@@ -211,6 +211,7 @@ Phase 7
     6. [x] **P0 - 检索策略升级为真正的双路召回 + RRF 融合**：`HybridSearcher` 从"先向量检索再对向量结果做关键词加权融合"改为向量路与关键词路各自独立召回，再用 RRF 融合排名。向量路增加 `vector_score_threshold` 过滤低质量候选。
     7. [x] **P1 - 取消最终总预算截断**：移除 `MemorySystem.retrieve_context()` 中 `total_budget=8` 的硬性截断逻辑，激活 Cell 数量由动态上下限和实体共现门槛自然调节。
     8. [x] **P2 - 检索参数配置化**：新建 `src/session_mem/config.py`，将 RRF k 值、各路 top_k、向量分数阈值、RRF fallback 阈值、`MemorySystem` 主阈值等可调节参数集中管理，避免代码硬编码。
+    9. [x] **Hotfix - 关键词路覆盖不足 + 向量阈值过高**：`keyword_scores()` 仅扫描 `keywords` 和 `summary`，未覆盖 `raw_text` 原文，导致 LLM 提取遗漏时关键词路完全失效；同时 `VECTOR_SCORE_THRESHOLD = 0.6` 将大量语义相关但距离中等的 Cell 直接过滤。修复：关键词路改为扫描 `raw_text`；向量阈值从 0.6 降至 0.3。
   - **Phase 8.3**（条件执行）
     6. [ ] **P2 - 关键词匹配对通用词过于敏感**：若 Phase 8.1+8.2 后准确率差距仍 ≥0.05，实施 session-level 高频共现词惩罚（动态 IDF 加权 Jaccard）。
   - **Phase 8.4**（待执行）
