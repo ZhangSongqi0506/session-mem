@@ -85,6 +85,18 @@
   - `benchmarks/data_loader.py`
 - **Next step:** 重新跑 benchmark 加载流程，确认 `Failed to parse date_str` 警告消失，各 session turn 时间戳恢复真实的日期间隔。
 
+### Hotfix: 修复 CHECK constraint failed — LLM 返回非法 cell_type
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **问题发现**：
+  - 跑 benchmark 时 `conv-30` 报错：`CHECK constraint failed: cell_type IN ('fact', 'constraint', 'preference', 'task', 'fragmented')`。
+  - 根因：`cell_generator.py` 直接使用 LLM 返回的 `cell_type`，未做白名单校验。当 LLM 返回了不在枚举范围内的值（如 `"summary"`、`"meta"`、空字符串、拼写错误等），写入 `cells` 表时触发数据库约束失败，导致 benchmark 中断。
+- **Actions taken:**
+  1. 修改 `src/session_mem/core/cell_generator.py`：在构造 `MemoryCell` 前增加 `_VALID_CELL_TYPES` 白名单校验，非法 `cell_type` 自动 fallback 为 `"fact"` 并记录 `logger.warning`。
+  2. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `src/session_mem/core/cell_generator.py`
+- **Next step:** 重新跑完整 benchmark，确认 `conv-30` 不再因 CHECK constraint 失败而中断。
+
 ### v7 Benchmark 结果分析（Phase 9.1+9.2+9.2.1+9.3 联合评估）
 - **Status:** 结果已产出，核心指标恶化，需进入 Phase 9.4 修复
 - **数据集**：`locomo_phase821_2sess_allqa_v7.json`，304 QA
