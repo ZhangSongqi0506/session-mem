@@ -22,16 +22,20 @@ class QAMetrics:
     # 全量基线
     baseline_tokens: int = 0
     baseline_latency_ms: float = 0.0
+    baseline_ttft_ms: float = 0.0
     baseline_answer: str = ""
 
     # 滑窗基线
     sliding_tokens: int = 0
     sliding_latency_ms: float = 0.0
+    sliding_ttft_ms: float = 0.0
     sliding_answer: str = ""
 
     # session-mem
     session_mem_tokens: int = 0
     session_mem_latency_ms: float = 0.0
+    session_mem_total_latency_ms: float = 0.0
+    session_mem_ttft_ms: float = 0.0
     session_mem_answer: str = ""
 
     # session-mem Token 拆解
@@ -72,6 +76,22 @@ class EvaluationResult:
     median_session_mem_latency_ms: float = 0.0
     p95_session_mem_latency_ms: float = 0.0
 
+    # Total latency (session-mem retrieval + generation)
+    avg_session_mem_total_latency_ms: float = 0.0
+
+    # TTFT
+    avg_baseline_ttft_ms: float = 0.0
+    median_baseline_ttft_ms: float = 0.0
+    p95_baseline_ttft_ms: float = 0.0
+
+    avg_sliding_ttft_ms: float = 0.0
+    median_sliding_ttft_ms: float = 0.0
+    p95_sliding_ttft_ms: float = 0.0
+
+    avg_session_mem_ttft_ms: float = 0.0
+    median_session_mem_ttft_ms: float = 0.0
+    p95_session_mem_ttft_ms: float = 0.0
+
     # Internal token overhead
     avg_session_mem_internal_tokens: float = 0.0
 
@@ -92,6 +112,16 @@ class EvaluationResult:
             "avg_session_mem_latency_ms": self.avg_session_mem_latency_ms,
             "median_session_mem_latency_ms": self.median_session_mem_latency_ms,
             "p95_session_mem_latency_ms": self.p95_session_mem_latency_ms,
+            "avg_session_mem_total_latency_ms": self.avg_session_mem_total_latency_ms,
+            "avg_baseline_ttft_ms": self.avg_baseline_ttft_ms,
+            "median_baseline_ttft_ms": self.median_baseline_ttft_ms,
+            "p95_baseline_ttft_ms": self.p95_baseline_ttft_ms,
+            "avg_sliding_ttft_ms": self.avg_sliding_ttft_ms,
+            "median_sliding_ttft_ms": self.median_sliding_ttft_ms,
+            "p95_sliding_ttft_ms": self.p95_sliding_ttft_ms,
+            "avg_session_mem_ttft_ms": self.avg_session_mem_ttft_ms,
+            "median_session_mem_ttft_ms": self.median_session_mem_ttft_ms,
+            "p95_session_mem_ttft_ms": self.p95_session_mem_ttft_ms,
             "avg_session_mem_internal_tokens": self.avg_session_mem_internal_tokens,
             "avg_baseline_judge_score": self.avg_baseline_judge_score,
             "avg_sliding_judge_score": self.avg_sliding_judge_score,
@@ -104,12 +134,16 @@ class EvaluationResult:
                     "ground_truth": q.ground_truth,
                     "baseline_tokens": q.baseline_tokens,
                     "baseline_latency_ms": q.baseline_latency_ms,
+                    "baseline_ttft_ms": q.baseline_ttft_ms,
                     "baseline_answer": q.baseline_answer,
                     "sliding_tokens": q.sliding_tokens,
                     "sliding_latency_ms": q.sliding_latency_ms,
+                    "sliding_ttft_ms": q.sliding_ttft_ms,
                     "sliding_answer": q.sliding_answer,
                     "session_mem_tokens": q.session_mem_tokens,
                     "session_mem_latency_ms": q.session_mem_latency_ms,
+                    "session_mem_total_latency_ms": q.session_mem_total_latency_ms,
+                    "session_mem_ttft_ms": q.session_mem_ttft_ms,
                     "session_mem_answer": q.session_mem_answer,
                     "session_mem_meta_cell_tokens": q.session_mem_meta_cell_tokens,
                     "session_mem_hot_zone_tokens": q.session_mem_hot_zone_tokens,
@@ -145,7 +179,19 @@ class EvaluationResult:
         lines.append(
             f"Avg Token Saving vs Sliding: {self.avg_token_saving_rate_vs_sliding * 100:.2f}%"
         )
-        lines.append(f"Avg session-mem Latency: {self.avg_session_mem_latency_ms:.2f} ms")
+        lines.append(
+            f"Avg Baseline Latency (total): {self.avg_baseline_latency_ms:.2f} ms | "
+            f"TTFT: {self.avg_baseline_ttft_ms:.2f} ms"
+        )
+        lines.append(
+            f"Avg Sliding Latency (total): {self.avg_sliding_latency_ms:.2f} ms | "
+            f"TTFT: {self.avg_sliding_ttft_ms:.2f} ms"
+        )
+        lines.append(
+            f"Avg session-mem Latency (retrieval): {self.avg_session_mem_latency_ms:.2f} ms | "
+            f"Total: {self.avg_session_mem_total_latency_ms:.2f} ms | "
+            f"TTFT: {self.avg_session_mem_ttft_ms:.2f} ms"
+        )
         if self.avg_baseline_judge_score is not None:
             lines.append(f"Avg Baseline Judge: {self.avg_baseline_judge_score:.3f}")
         if self.avg_sliding_judge_score is not None:
@@ -164,17 +210,28 @@ class EvaluationResult:
             lines.append("")
 
             lines.append("[Baseline]")
-            lines.append(f"  Tokens: {q.baseline_tokens} | Judge: {q.baseline_judge_score}")
+            lines.append(
+                f"  Tokens: {q.baseline_tokens} | Judge: {q.baseline_judge_score} | "
+                f"Latency: {q.baseline_latency_ms:.2f} ms | TTFT: {q.baseline_ttft_ms:.2f} ms"
+            )
             lines.append(f"  Answer: {q.baseline_answer or '(empty)'}")
             lines.append("")
 
             lines.append("[Sliding]")
-            lines.append(f"  Tokens: {q.sliding_tokens} | Judge: {q.sliding_judge_score}")
+            lines.append(
+                f"  Tokens: {q.sliding_tokens} | Judge: {q.sliding_judge_score} | "
+                f"Latency: {q.sliding_latency_ms:.2f} ms | TTFT: {q.sliding_ttft_ms:.2f} ms"
+            )
             lines.append(f"  Answer: {q.sliding_answer or '(empty)'}")
             lines.append("")
 
             lines.append("[session-mem]")
-            lines.append(f"  Tokens: {q.session_mem_tokens} | Judge: {q.session_mem_judge_score}")
+            lines.append(
+                f"  Tokens: {q.session_mem_tokens} | Judge: {q.session_mem_judge_score} | "
+                f"Retrieval: {q.session_mem_latency_ms:.2f} ms | "
+                f"Total: {q.session_mem_total_latency_ms:.2f} ms | "
+                f"TTFT: {q.session_mem_ttft_ms:.2f} ms"
+            )
             lines.append(f"  Meta Cell: {q.session_mem_meta_cell_tokens} tokens")
             lines.append(f"  Hot Zone: {q.session_mem_hot_zone_tokens} tokens")
             lines.append(f"  Internal Tokens (retrieval): {q.session_mem_internal_tokens} tokens")
@@ -190,6 +247,20 @@ class EvaluationResult:
             lines.append("")
 
         Path(path).write_text("\n".join(lines), encoding="utf-8")
+
+
+def _percentile(sorted_vals: list[float], p: float) -> float:
+    """计算已排序列表的百分位数（线性插值）。"""
+    if not sorted_vals:
+        return 0.0
+    n = len(sorted_vals)
+    idx = (n - 1) * p
+    lower = int(idx)
+    upper = lower + 1
+    if upper >= n:
+        return sorted_vals[-1]
+    weight = idx - lower
+    return sorted_vals[lower] * (1 - weight) + sorted_vals[upper] * weight
 
 
 def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
@@ -216,6 +287,19 @@ def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
     )
     p95_idx = int(total * 0.95)
     p95_sm_lat = sm_lats[min(p95_idx, total - 1)]
+
+    # TTFT aggregates
+    base_ttfts = sorted(q.baseline_ttft_ms for q in qas)
+    slide_ttfts = sorted(q.sliding_ttft_ms for q in qas)
+    sm_ttfts = sorted(q.session_mem_ttft_ms for q in qas)
+
+    avg_base_ttft = sum(base_ttfts) / total if base_ttfts else 0.0
+    avg_slide_ttft = sum(slide_ttfts) / total if slide_ttfts else 0.0
+    avg_sm_ttft = sum(sm_ttfts) / total if sm_ttfts else 0.0
+
+    # Total latency aggregate for session-mem
+    sm_total_lats = [q.session_mem_total_latency_ms for q in qas]
+    avg_sm_total_lat = sum(sm_total_lats) / total if sm_total_lats else 0.0
 
     internal_tokens = [q.session_mem_internal_tokens for q in qas]
     avg_internal_tokens = sum(internal_tokens) / total if internal_tokens else 0.0
@@ -249,6 +333,16 @@ def compute_aggregate(qas: list[QAMetrics]) -> EvaluationResult:
         avg_session_mem_latency_ms=avg_sm_lat,
         median_session_mem_latency_ms=median_sm_lat,
         p95_session_mem_latency_ms=p95_sm_lat,
+        avg_session_mem_total_latency_ms=avg_sm_total_lat,
+        avg_baseline_ttft_ms=avg_base_ttft,
+        median_baseline_ttft_ms=_percentile(base_ttfts, 0.5),
+        p95_baseline_ttft_ms=_percentile(base_ttfts, 0.95),
+        avg_sliding_ttft_ms=avg_slide_ttft,
+        median_sliding_ttft_ms=_percentile(slide_ttfts, 0.5),
+        p95_sliding_ttft_ms=_percentile(slide_ttfts, 0.95),
+        avg_session_mem_ttft_ms=avg_sm_ttft,
+        median_session_mem_ttft_ms=_percentile(sm_ttfts, 0.5),
+        p95_session_mem_ttft_ms=_percentile(sm_ttfts, 0.95),
         avg_session_mem_internal_tokens=avg_internal_tokens,
         avg_baseline_judge_score=avg_baseline_judge,
         avg_sliding_judge_score=avg_sliding_judge,

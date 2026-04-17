@@ -164,6 +164,13 @@
       3. `locomo_runner.py`：`_answer()` 的 system 指令追加 `"If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."`。
     - **代码变更**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_retrieval.py`。
     - **验证结果**：全部 106 个测试通过；black + ruff 通过。新增 `test_retrieve_context_sorts_activated_cells_by_timestamp` 和 `test_working_memory_includes_timestamp_prefix` 分别验证时间升序排列和时间戳前缀注入。
+  - **Phase 8.8（待执行，2026-04-16 新增）**：
+    15. **benchmark latency 口径不一致问题**：v5 benchmark 结果分析时发现，`avg_session_mem_latency_ms`（2.76s）与 `avg_baseline_latency_ms`（12.3s）/`avg_sliding_latency_ms`（9.8s）**不是同一维度**。session-mem 仅测量 `retrieve_context()`（检索+组装），而 baseline/sliding 测量的是完整 LLM 回答生成时间。这导致 session-mem "看起来快很多"，但实际无法直接对比。
+    - **修复方案**：
+      1. `locomo_runner.py`：通过 streaming API 为三种方法统一采集 **TTFT**（Time To First Token）和完整生成时间。
+      2. `metrics.py`：新增 `session_mem_total_latency_ms`（检索 + 生成），以及 `baseline_ttft_ms`、`sliding_ttft_ms`、`session_mem_ttft_ms`；聚合结果同步输出 avg/median/p95。
+      3. 对于不支持 streaming 的 backend（如测试用的 `FakeLLMClient`），TTFT fallback 为 total latency，保证兼容性。
+    - **预期收益**：消除 latency 指标的口径歧义，让三向延迟对比具备实际可比性；TTFT 作为用户感知的首字响应延迟，可验证 session-mem 的检索开销是否影响首字体验。
 
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem

@@ -235,6 +235,21 @@ Phase 8
       3. `locomo_runner.py:_answer()` 的 system 指令增加一条补充："If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."
     - **涉及代码**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_retrieval.py`。
     - **验证结果**：全部 106 个测试通过；black + ruff 通过。新增 `test_retrieve_context_sorts_activated_cells_by_timestamp` 和 `test_working_memory_includes_timestamp_prefix`。
+  - **Phase 8.8**（待执行，2026-04-16 新增）
+    12. [ ] **P0 - benchmark latency 口径统一 + TTFT 首 token 延迟采集**：
+      - **问题**：当前 `avg_session_mem_latency_ms` 仅测量 `retrieve_context()`（检索+组装，约 2.8s），而 `avg_baseline_latency_ms` / `avg_sliding_latency_ms` 测量的是完整 LLM 回答生成时间（约 10-12s）。三者口径不一致，导致 session-mem 的延迟数据无法与 baseline/sliding 直接对比，存在显著误导性。
+      - **改进项 1 - 统一总延迟口径**：
+        - 为 session-mem 新增 `session_mem_total_latency_ms` = `session_mem_latency_ms`（检索）+ LLM 生成时间。
+        - baseline / sliding 的 latency 保持为完整生成时间，但语义上明确为 "total generation latency"。
+      - **改进项 2 - 三种方法均增加 TTFT**：
+        - 通过 OpenAI streaming API 采集 `time_to_first_token`（从发请求到收到第一个 chunk 的时间）。
+        - 新增字段：`baseline_ttft_ms`、`sliding_ttft_ms`、`session_mem_ttft_ms`。
+        - 对于不支持 streaming 的 backend（如 `FakeLLMClient`），fallback 为 TTFT = total latency。
+      - **改进项 3 - 聚合指标与报告输出**：
+        - `metrics.py` 的 `EvaluationResult` 增加 `avg_*_total_latency_ms`、`avg_*_ttft_ms`、median/p95 分位数。
+        - `save_text_report()` 与 `locomo_runner.py` 的日志输出同步增加新指标。
+    - **涉及代码**：`benchmarks/locomo_runner.py`、`benchmarks/metrics.py`、`tests/test_benchmark.py`。
+    - **验收标准**：全部单元测试通过；black + ruff 通过；聚合 JSON 与文本报告中同时出现 total latency 和 TTFT 指标。
 - **涉及代码**:
   - `src/session_mem/llm/qwen_client.py`（已修复）
   - `benchmarks/metrics.py`

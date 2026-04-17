@@ -31,17 +31,16 @@ ANSWER_INSTRUCTION = (
 )
 
 
-def _answer(llm_client, messages: list[dict[str, str]]) -> str:
-    """调用 LLM 生成回答。"""
+def _answer_with_metrics(llm_client, messages: list[dict[str, str]]) -> tuple[str, float, float]:
+    """调用 LLM 生成回答，返回 (answer, total_latency_ms, ttft_ms)。"""
     if not messages:
-        return ""
+        return "", 0.0, 0.0
     instructed = [{"role": "system", "content": ANSWER_INSTRUCTION}] + messages
     try:
-        resp = llm_client.chat_completion(messages=instructed, temperature=0.3)
-        return resp.strip()
+        return llm_client.chat_completion_with_metrics(messages=instructed, temperature=0.3)
     except Exception as exc:
         logger.warning("LLM answer failed: %s", exc)
-        return ""
+        return "", 0.0, 0.0
 
 
 def run_session(
@@ -195,25 +194,30 @@ def run_session(
         # --- 方法级并发：三种回答生成 ---
         if run_accuracy:
 
-            def _timed_answer(msgs: list[dict[str, str]]) -> tuple[str, float]:
-                start = time.perf_counter()
-                ans = _answer(llm_client, msgs)
-                latency = (time.perf_counter() - start) * 1000
-                return ans, latency
+            def _timed_answer(msgs: list[dict[str, str]]) -> tuple[str, float, float]:
+                return _answer_with_metrics(llm_client, msgs)
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_baseline = executor.submit(_timed_answer, baseline_msgs)
                 future_sliding = executor.submit(_timed_answer, slide_msgs)
                 future_sm = executor.submit(_timed_answer, sm_msgs)
 
-                metrics.baseline_answer, metrics.baseline_latency_ms = future_baseline.result()
-                metrics.sliding_answer, metrics.sliding_latency_ms = future_sliding.result()
-                metrics.session_mem_answer, metrics.session_mem_latency_ms_extra = (
-                    future_sm.result()
-                )
-                # session_mem_latency_ms 仅包含 retrieve_context 时间；
-                # 若希望总 latency 包含生成时间，可累加：
-                # metrics.session_mem_latency_ms += metrics.session_mem_latency_ms_extra
+                (
+                    metrics.baseline_answer,
+                    metrics.baseline_latency_ms,
+                    metrics.baseline_ttft_ms,
+                ) = future_baseline.result()
+                (
+                    metrics.sliding_answer,
+                    metrics.sliding_latency_ms,
+                    metrics.sliding_ttft_ms,
+                ) = future_sliding.result()
+                (
+                    metrics.session_mem_answer,
+                    gen_ms,
+                    metrics.session_mem_ttft_ms,
+                ) = future_sm.result()
+                metrics.session_mem_total_latency_ms = metrics.session_mem_latency_ms + gen_ms
         else:
             metrics.baseline_latency_ms = 0.0
             metrics.sliding_latency_ms = 0.0

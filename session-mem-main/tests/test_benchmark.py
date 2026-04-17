@@ -20,6 +20,14 @@ class FakeLLMClient:
     def isolated_chat(self, messages, temperature=0.3, response_format=None, **kwargs):
         return self.response
 
+    def chat_completion_with_metrics(self, messages, temperature=0.3, **kwargs):
+        import time
+
+        start = time.perf_counter()
+        resp = self.chat_completion(messages, temperature, **kwargs)
+        elapsed = (time.perf_counter() - start) * 1000
+        return resp, elapsed, elapsed  # total=ttft fallback
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [[1.0, 0.0] + [0.0] * 1022]
 
@@ -237,6 +245,10 @@ def test_run_session_accuracy_mode_populates_answers():
     # latency 在有 accuracy 时应 > 0（虽然是 fake，但有时间开销）
     assert m.baseline_latency_ms >= 0.0
     assert m.sliding_latency_ms >= 0.0
+    assert m.baseline_ttft_ms >= 0.0
+    assert m.sliding_ttft_ms >= 0.0
+    assert m.session_mem_ttft_ms >= 0.0
+    assert m.session_mem_total_latency_ms >= m.session_mem_latency_ms
 
 
 # -----------------------------------------------------------------------------
@@ -267,6 +279,10 @@ def test_compute_aggregate_with_qas():
             sliding_judge_score=0.6,
             session_mem_judge_score=0.9,
             session_mem_internal_tokens=12,
+            baseline_ttft_ms=100.0,
+            sliding_ttft_ms=80.0,
+            session_mem_ttft_ms=60.0,
+            session_mem_total_latency_ms=110.0,
         ),
         QAMetrics(
             session_id="s1",
@@ -284,6 +300,10 @@ def test_compute_aggregate_with_qas():
             sliding_judge_score=0.5,
             session_mem_judge_score=0.85,
             session_mem_internal_tokens=8,
+            baseline_ttft_ms=120.0,
+            sliding_ttft_ms=90.0,
+            session_mem_ttft_ms=70.0,
+            session_mem_total_latency_ms=120.0,
         ),
     ]
     agg = compute_aggregate(qas)
@@ -296,6 +316,10 @@ def test_compute_aggregate_with_qas():
     assert agg.avg_baseline_judge_score == 0.75
     assert agg.avg_sliding_judge_score == 0.55
     assert agg.avg_session_mem_judge_score == 0.875
+    assert agg.avg_baseline_ttft_ms == 110.0
+    assert agg.avg_sliding_ttft_ms == 85.0
+    assert agg.avg_session_mem_ttft_ms == 65.0
+    assert agg.avg_session_mem_total_latency_ms == 115.0
 
 
 def test_judge_answer_extracts_score():
@@ -386,6 +410,7 @@ def test_evaluation_result_text_report():
     assert "Avg Baseline Judge: 0.600" in text
     assert "Avg Sliding Judge: 0.700" in text
     assert "Avg session-mem Judge: 0.800" in text
+    assert "TTFT" in text or "Total" in text
 
     Path(path).unlink()
 

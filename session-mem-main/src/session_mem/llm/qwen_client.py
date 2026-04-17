@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from openai import OpenAI
@@ -65,6 +66,59 @@ class QwenClient(LLMClient):
             **kwargs,
         )
         return resp.choices[0].message.content or ""
+
+    def chat_completion_with_metrics(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.3,
+        response_format: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> tuple[str, float, float]:
+        """
+        通过 streaming API 调用 LLM，返回 (content, total_latency_ms, ttft_ms)。
+
+        total_latency_ms: 从发出请求到收到完整回答的总耗时。
+        ttft_ms: 从发出请求到收到第一个 token 的时间（Time To First Token）。
+        """
+        extra = {}
+        if response_format:
+            if self.supports_json_schema or response_format.get("type") != "json_schema":
+                extra["response_format"] = response_format
+
+        start = time.perf_counter()
+        first_chunk_time: float | None = None
+        pieces: list[str] = []
+
+        try:
+            stream = self._client.chat.completions.create(
+                model=kwargs.pop("model", self.model),
+                messages=messages,  # type: ignore[arg-type]
+                temperature=temperature,
+                stream=True,
+                **extra,
+                **kwargs,
+            )
+            for chunk in stream:
+                if first_chunk_time is None:
+                    first_chunk_time = time.perf_counter()
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    pieces.append(delta)
+        except Exception:
+            # Streaming 异常时 fallback 到非流式调用
+            total_ms = (time.perf_counter() - start) * 1000
+            content = self.chat_completion(
+                messages=messages,
+                temperature=temperature,
+                response_format=response_format,
+                **kwargs,
+            )
+            return content, total_ms, total_ms
+
+        end = time.perf_counter()
+        total_latency_ms = (end - start) * 1000
+        ttft_ms = ((first_chunk_time or end) - start) * 1000
+        return "".join(pieces), total_latency_ms, ttft_ms
 
     def isolated_chat(
         self,

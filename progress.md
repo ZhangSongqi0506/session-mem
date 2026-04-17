@@ -41,6 +41,23 @@
   - `tests/test_retrieval.py`
 - **Next step:** 跑服务器 benchmark（v5）验证 Phase 8.6 + 8.7 叠加后的准确率差距是否进一步缩小。
 
+### Phase 8.8: benchmark latency 口径统一 + TTFT 采集（待执行）
+- **Status:** pending（2026-04-16 新增待优化项）
+- **问题发现：**
+  - v5 benchmark（200 QA）结果显示 `avg_session_mem_latency_ms = 2758.98 ms`，而 `avg_baseline_latency_ms = 12338.68 ms`、`avg_sliding_latency_ms = 9801.87 ms`。
+  - 但 `session_mem_latency_ms` 只测了 `retrieve_context()`（检索+组装），baseline/sliding 测的是完整 LLM 回答生成时间。三者**不是同一口径**，session-mem 看起来"快很多"是因为没把 LLM 生成时间算进去，存在误导性。
+  - 同时，当前 benchmark 缺少 **TTFT**（Time To First Token）指标，无法衡量用户实际感知的首字响应延迟。
+- **改进计划：**
+  1. `locomo_runner.py`：通过底层 OpenAI client 的 `stream=True` 采集三种方法的 TTFT 和完整生成时间；`session_mem_total_latency_ms = retrieve_context 时间 + LLM 生成时间`。
+  2. `metrics.py`：`QAMetrics` 新增 `baseline_ttft_ms`、`sliding_ttft_ms`、`session_mem_ttft_ms`、`session_mem_total_latency_ms`；`EvaluationResult` 增加对应聚合指标（avg / median / p95）。
+  3. `locomo_runner.py` 日志与 `save_text_report()` 同步输出新指标。
+  4. 对不支持 streaming 的 backend（如 `FakeLLMClient`）做 fallback：TTFT = total latency。
+- **涉及文件:**
+  - `benchmarks/locomo_runner.py`
+  - `benchmarks/metrics.py`
+  - `tests/test_benchmark.py`
+- **Next step:** 完成代码修改后跑测试，确保全部 106+ 个测试通过。
+
 ### Phase 8.6: 关键词检索升级为 BM25（计划已确立）
 - **Status:** pending（计划已写入三个计划文件，待 Phase 8.5 benchmark 验证后决定是否执行）
 - **Actions taken:**
