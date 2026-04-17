@@ -72,6 +72,19 @@
   - `benchmarks/data_loader.py`
 - **Next step:** 跑 v8 benchmark（304 QA）验证准确率差距是否从 0.081 回落至 ≤0.05，同时确认激活 Cell 数量不再刚性 8-10 个。
 
+### Phase 9.4.1: 修复 LoCoMo 日期格式解析
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **问题发现**：
+  - Phase 9.4 的 warning 日志暴露 LoCoMo 数据集真实日期格式为 `"HH:MM am/pm on D Month, YYYY"`（如 `"1:56 pm on 8 May, 2023"`）。
+  - 原有 `_parse_session_datetime()` 未包含该格式，导致**几乎所有 session 日期都 fallback 到固定基线 `2023-05-01`**。
+  - 后果：同一 conversation 下多个 `session_x` 的真实时间差异全部丢失，`gap_detected()` 时间间隔检测失效；Cell 时间戳无法反映真实对话发生时间，严重干扰 when 类问题评估。
+- **Actions taken:**
+  1. 修改 `benchmarks/data_loader.py`：在 `_parse_session_datetime()` 的格式列表中新增 `"%I:%M %p on %d %B, %Y"`，优先匹配带时间前缀的日期字符串。
+  2. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `benchmarks/data_loader.py`
+- **Next step:** 重新跑 benchmark 加载流程，确认 `Failed to parse date_str` 警告消失，各 session turn 时间戳恢复真实的日期间隔。
+
 ### v7 Benchmark 结果分析（Phase 9.1+9.2+9.2.1+9.3 联合评估）
 - **Status:** 结果已产出，核心指标恶化，需进入 Phase 9.4 修复
 - **数据集**：`locomo_phase821_2sess_allqa_v7.json`，304 QA

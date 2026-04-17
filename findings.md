@@ -251,6 +251,17 @@
   - `src/session_mem/config.py`
   - `benchmarks/data_loader.py`
 
+## Phase 9.4.1: 修复 LoCoMo 日期格式解析
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **问题发现**：Phase 9.4 的 warning 日志暴露 LoCoMo 数据集真实日期格式为 `"HH:MM am/pm on D Month, YYYY"`（如 `"1:56 pm on 8 May, 2023"`），原有解析逻辑未覆盖，导致几乎所有 session 日期 fallback 到固定基线 `2023-05-01`。这造成跨 session 时间差异丢失、`gap_detected()` 失效、when 类问题评估被严重干扰。
+- **修复动作**：`data_loader.py` 的 `_parse_session_datetime()` 新增 `"%I:%M %p on %d %B, %Y"` 格式，直接匹配带时间前缀的日期字符串。
+- **涉及文件:**
+  - `benchmarks/data_loader.py`
+- **验收标准**：
+  1. benchmark 加载时 `Failed to parse date_str` 警告显著减少或消失。
+  2. 各 `session_x` 的 turn 时间戳能反映真实的日期间隔。
+  3. 全部单元测试通过；black + ruff 通过。
+
 ## Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过）
 - **benchmark 策略**：与 9.2 一并完成后统一跑 **v7 benchmark**。

@@ -39,7 +39,7 @@ def _parse_session_datetime(date_str: str | None) -> datetime:
         )
         return _FALLBACK_BASELINE
     # 常见格式: "7 May 2023" 或 "May 7, 2023"
-    for fmt in ("%d %B %Y", "%B %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+    for fmt in ("%I:%M %p on %d %B, %Y", "%d %B %Y", "%B %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
         try:
             dt = datetime.strptime(date_str.strip(), fmt)
             return dt.replace(tzinfo=timezone.utc)

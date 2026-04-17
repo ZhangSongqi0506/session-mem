@@ -365,6 +365,21 @@ Phase 9
   4. [x] Token 节省率保持 ≥40%。
   5. [x] 全部单元测试通过；black + ruff 通过。
 
+### Phase 9.4.1: 修复 LoCoMo 日期格式解析
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **问题发现**：Phase 9.4 修复 fallback 后，benchmark 日志出现大量 `Failed to parse date_str '1:56 pm on 8 May, 2023'` 警告。说明 LoCoMo 数据集的真实日期格式为 `"HH:MM am/pm on D Month, YYYY"`，不在原有 4 种解析格式中，导致**所有 session 日期均 fallback 到固定基线**。
+- **影响**：
+  1. 同一 conversation 下多个 `session_x` 的真实时间差异全部丢失，跨天/跨月对话的时间间隔检测（`gap_detected()`）基本失效。
+  2. Cell 时间戳被统一压缩在 `2023-05-01` 附近，LLM 无法基于真实对话发生时间回答 when 类问题。
+- **修复动作**：
+  1. `data_loader.py`：在 `_parse_session_datetime()` 的格式列表中新增 `"%I:%M %p on %d %B, %Y"`，优先匹配 `"1:56 pm on 8 May, 2023"` 这类带时间前缀的日期字符串。
+- **涉及代码**：
+  - `benchmarks/data_loader.py`
+- **验收标准**：
+  1. [x] benchmark 日志中 `Failed to parse date_str` 警告显著减少或消失（仅剩真正无法解析的异常值）。
+  2. [x] 不同 `session_x` 的 turn 时间戳能反映真实的日期间隔（如 5 月 8 日 vs 6 月 9 日）。
+  3. [x] 全部单元测试通过；black + ruff 通过。
+
 - **问题发现（v5 benchmark 深度分析）**：
   - 大量早期通用背景 cell（如 C_001、C_010）在 v5 中被激活了 **80-90%** 的 QA 次数，严重挤占 prompt 空间。
   - 根因：`memory_system.py` 的实体共现激活机制使用 `find_by_entity()` 做硬等值匹配：一旦召回 cell 的 entities 中包含高频实体（如 `Jon`、`Gina`），系统就会把会话中**所有**含该实体的 cell 都拉进来，实质上变成了全表扫描。
