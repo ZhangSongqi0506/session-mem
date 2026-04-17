@@ -36,6 +36,16 @@
   - `src/session_mem/core/memory_system.py`
   - `tests/test_retrieval.py`
 
+### Phase 9.2.1: BM25 实体扩展候选池去前置过滤
+- **Status:** complete（代码已修改、测试通过）
+- **Actions taken:**
+  1. 修改 `src/session_mem/core/memory_system.py`：
+     - 取消实体扩展候选池的 `seen` 前置过滤，改为**全部 session cell** 参与 BM25 评分。
+     - 全局排序后遍历，跳过已在 `seen` 中的 cell，继续向下取，直到凑满 `extra_limit=3` 个新增 cell 为止。
+  2. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `src/session_mem/core/memory_system.py`
+
 ### Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过）
 - **Actions taken:**
