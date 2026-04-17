@@ -239,7 +239,7 @@
   1. **检索阈值修复**：提高 `MEMORY_SYSTEM_THRESHOLD`（0.008 → 0.015/0.018），降低 `max_cells`（8 → 6/7），恢复动态调节能力。
   2. **时间戳机制整顿**：
      - 修复 `data_loader.py` 的 `datetime.now()` fallback 为固定基准日期，保证 Cell 时间戳反映真实对话发生时间。
-     - 新增轻量级时间提取器，从 turn text 中提取并归一化"对话中提到的时间"（如 "last month" → ISO），写入 `MemoryCell.metadata`，并在 Prompt 中显式提示，解决时间类问题的信息混淆。
+     - 确认 `WorkingMemory.to_prompt()` 中的时间戳前缀足够醒目，让 LLM 能基于真实对话发生时间回答时间类问题。无需额外提取 turn text 中的 mentioned time。
 
 ## Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过）

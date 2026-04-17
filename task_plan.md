@@ -348,27 +348,20 @@ Phase 9
 
 - **Part B: 时间戳机制整顿**
   - **问题发现**：v7 中出现大量时间戳为 `2026-04-17`（即当前运行日期）的 Cell，原因是 `data_loader.py` 在 session date 解析失败时 fallback 到 `datetime.now()`。
-  - **时间语义澄清**：
-    1. **对话发生时间**（Conversation Time）：由 session 的 `session_x_date_time` 决定，每个 turn 都应有此时间戳。Cell 的 `timestamp_start` / `timestamp_end` 必须严格对应此时间。
-    2. **对话中提到的时间**（Mentioned Time）：存在于 turn text 中的相对/绝对时间（如 "last month"、"next Friday"、"May 7th"）。当前系统未提取，导致 LLM 无法准确回答时间类问题。
+  - **核心原则**：对话发生的时间由 session 的 `session_x_date_time` 决定，Cell 的 `timestamp_start` / `timestamp_end` 必须严格对应此时间。只要保证时间戳真实、准确，并在 Prompt 中清晰呈现，LLM 就能基于对话发生时间回答时间类问题，无需额外提取 turn text 中的 mentioned time。
   - **修复方案**：
     1. **修复 benchmark 时间戳 fallback**：
        - `data_loader.py`：将 `datetime.now()` fallback 替换为固定基准日期（如 `2023-05-01T00:00:00+00:00`），与 LoCoMo 真实时间对齐。
        - 增加解析失败时的 warning 日志，便于排查数据质量问题。
-    2. **提取并归一化对话中提到的时间**：
-       - 新建轻量级时间提取器（regex + `dateparser` 规则），扫描每个 turn 的 text。
-       - 将提取到的时间归一化为 ISO 8601 格式，作为 `mentioned_time` 写入 turn 的 metadata。
-       - 在 `CellGenerator` 生成 Cell 时，将 `mentioned_time` 列表写入 `MemoryCell.metadata["mentioned_times"]`。
-       - 在 `WorkingMemory.to_prompt()` 中，若 Cell 包含 `mentioned_times`，在时间戳前缀后追加 `[Mentioned: ...]` 提示，帮助 LLM 区分"对话发生时间"和"事件时间"。
+    2. **确保 Prompt 中时间戳清晰可见**：
+       - 确认 `WorkingMemory.to_prompt()` 已给每个 activated cell 的 `raw_text` 前加上 `[timestamp_start - timestamp_end]` 前缀（Phase 8.7 已完成）。
+       - 若格式不够醒目，可微调前缀样式（如换行分隔），提升 LLM 对时序信息的感知度。
 
 - **涉及代码**：
   - `src/session_mem/config.py`（`MEMORY_SYSTEM_THRESHOLD`）
   - `src/session_mem/core/memory_system.py`（`max_cells` 计算逻辑）
   - `benchmarks/data_loader.py`（fallback 修复）
-  - `src/session_mem/core/buffer.py`（`Turn` 增加 `metadata` 字段）
-  - `src/session_mem/core/cell_generator.py`（`mentioned_times` 透传）
-  - `src/session_mem/core/working_memory.py`（Prompt 组装增加 mentioned_times 提示）
-  - 新增 `src/session_mem/utils/time_extractor.py`（可选：若 `dateparser` 太复杂，可先用手工 regex 版本）
+  - `src/session_mem/core/working_memory.py`（Prompt 时间戳前缀样式微调，可选）
 - **验收标准**：
   1. benchmark 生成的 Cell 时间戳不再出现 `2026-04-17` 等当前日期。
   2. 抽样检查 `mentioned_times` 能正确提取 "last month"、"next Friday" 等相对时间。

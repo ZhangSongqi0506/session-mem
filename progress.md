@@ -75,7 +75,7 @@
   1. **检索阈值修复**：`MEMORY_SYSTEM_THRESHOLD` 0.008 → 0.015/0.018；`max_cells` 8 → 6/7。
   2. **时间戳机制整顿**：
      - 修复 `data_loader.py` fallback 到 `now()` 的 bug，改用固定基准日期。
-     - 提取 turn text 中"提到的时间"并归一化，作为 `MemoryCell.metadata` 注入 Prompt，帮助 LLM 区分"对话发生时间"与"事件时间"。
+     - 确认/优化 `WorkingMemory.to_prompt()` 中的时间戳前缀，让 LLM 基于真实对话发生时间回答时间类问题。无需额外提取 mentioned time。
   3. 必要时重新评估 9.3 移除 `linked_prev` 的影响。
 
 ## Session: 2026-04-16
