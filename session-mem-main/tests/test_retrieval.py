@@ -288,7 +288,7 @@ class TestHybridSearcher:
 
         scores = searcher.keyword_scores("Marley flooring studio", store.list_by_session("s1"))
         # rare_cell should have higher BM25 score because "marley" and "flooring" are rare
-        assert scores["C_002"] > scores["C_001"]
+        assert scores.get("C_002", 0.0) > scores.get("C_001", 0.0)
 
     def test_bm25_length_normalization(self):
         """BM25 应对长文档做长度归一化，相同词频下短文档得分更高。"""
@@ -317,6 +317,50 @@ class TestHybridSearcher:
 
         scores = searcher.keyword_scores("budget", store.list_by_session("s1"))
         assert scores["C_001"] > scores["C_002"]
+
+    def test_bm25_punctuation_cleaning(self):
+        """BM25 应清洗标点，使 query 中的 birthday? 能匹配文档中的 birthday.。"""
+        cell = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="birthday memory",
+            keywords=["birthday"],
+            entities=[],
+            raw_text="A friend made it for my 18th birthday.",
+        )
+        store = FakeCellStore([cell])
+        searcher = HybridSearcher(FakeVectorIndex(), store, "s1")
+
+        scores = searcher.keyword_scores(
+            "How long ago was the birthday?", store.list_by_session("s1")
+        )
+        # 清洗标点后 "birthday?" 应与 "birthday." 匹配
+        assert scores["C_001"] > 0.0
+
+    def test_bm25_stopwords_filtered(self):
+        """BM25 应过滤停用词，避免 how/long/ago 稀释关键词密度。"""
+        cell = MemoryCell(
+            id="C_001",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="Caroline info",
+            keywords=["caroline"],
+            entities=[],
+            raw_text="Caroline had a great time.",
+        )
+        store = FakeCellStore([cell])
+        searcher = HybridSearcher(FakeVectorIndex(), store, "s1")
+
+        # 停用词 "how", "long", "ago", "was" 应被过滤，只剩下 "caroline"
+        scores = searcher.keyword_scores("How long ago was Caroline?", store.list_by_session("s1"))
+        assert scores["C_001"] > 0.0
+
+        # 纯停用词查询应返回空分数
+        empty_scores = searcher.keyword_scores("How long ago was the?", store.list_by_session("s1"))
+        assert empty_scores == {}
 
 
 # -----------------------------------------------------------------------------

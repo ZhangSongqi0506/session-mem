@@ -3,6 +3,24 @@
   WHAT: session-mem 项目的会话级进度日志
 -->
 
+## Session: 2026-04-17
+
+### Phase 9.1: 检索召回率修复——BM25 标点清洗 + RRF 权重调整 + Query 停用词过滤
+- **Status:** in_progress
+- **问题发现**：
+  - v5 benchmark（304 QA，2 sessions 全量）分析显示 session-mem 与 baseline 差距仅 0.021（0.528 vs 0.549），但 `when` 类问题 SM 仅 0.076（baseline 0.182），大量精确事实题回答「文中未提及」。
+  - 根因：`hybrid_search.py` 的 BM25 实现存在 **标点未清洗** bug；`vector_weight=0.75 / keyword_weight=0.25` 导致字面匹配信号过弱；query 中停用词稀释关键词密度；`MEMORY_SYSTEM_THRESHOLD=0.015` 对 keyword-only hit 截断过严。
+- **Actions taken:**
+  1. 更新 `task_plan.md` / `findings.md` / `progress.md`：将当前工作标记为 Phase 9.1，补充根因分析与修复方案。
+  2. 修改 `src/session_mem/retrieval/hybrid_search.py`：
+     - BM25 token 增加 `re.sub(r'[^\w\s]', '', token)` 标点清洗。
+     - 增加中英文停用词过滤，从 query tokens 中移除无意义词后再参与 BM25 计算。
+  3. 修改 `src/session_mem/config.py`：
+     - `keyword_weight` 从 `0.25` 提升至 `0.4`，`vector_weight` 从 `0.75` 降至 `0.6`。
+     - `MEMORY_SYSTEM_THRESHOLD` 从 `0.015` 降至 `0.008`。
+  4. 更新 `tests/test_retrieval.py`：新增 BM25 标点清洗与停用词过滤测试。
+  5. 运行验证：全部测试通过；`black` + `ruff` 通过；提交 git。
+
 ## Session: 2026-04-16
 
 ### Phase 8.6: 关键词检索升级为 BM25

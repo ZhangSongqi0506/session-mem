@@ -172,6 +172,23 @@
       3. 对于不支持 streaming 的 backend（如测试用的 `FakeLLMClient`），TTFT fallback 为 total latency，保证兼容性。
     - **预期收益**：消除 latency 指标的口径歧义，让三向延迟对比具备实际可比性；TTFT 作为用户感知的首字响应延迟，可验证 session-mem 的检索开销是否影响首字体验。
 
+## Phase 9.1: 检索召回率修复——BM25 标点清洗 + RRF 权重调整 + Query 停用词过滤
+- **Status:** in_progress
+- **问题发现（v5 benchmark 深度分析，2026-04-17）**：
+  - v5 结果（304 QA，2 sessions 全量）：Baseline Judge 0.549，Session-mem Judge 0.528，差距仅 0.021。但缺陷高度集中在 `when` 类问题（66 题）：Baseline 0.182，SM 仅 **0.076**。
+  - 大量精确事实题（书名、地点、数字、时间）SM 回答「文中未提及」或「没有信息」，而 Baseline 能正确回答。在 134 个 SM 得零分的问题中，有 **35** 个 Baseline 得分 > 0，且 **24** 个 Baseline 满分但 SM 零分。
+- **根因诊断**：
+  1. **BM25 标点清洗缺失**：`hybrid_search.py:keyword_scores()` 中 `query.lower().split()` 得到的 token 含标点（如 `"birthday?"`），文档 token 也含标点（如 `"birthday."`）。BM25 的精确字符串匹配将它们视为不同词，导致 `"birthday"` 命中为 0。
+  2. **RRF 权重偏向语义路**：当前 `vector_weight=0.75 / keyword_weight=0.25`，事实型问题更依赖字面匹配，BM25 路权重过低。
+  3. **Query 停用词稀释密度**：`"How long ago was Caroline's 18th birthday?"` 被拆成 7 个 token，其中 `how/long/ago/was` 为停用词，有效关键词仅剩 `caroline's` 和 `birthday?`，且后者还因标点 bug 失效。
+  4. **`MEMORY_SYSTEM_THRESHOLD` 截断过严**：`0.015` 的 threshold 对 keyword-only hit（BM25 排 7+ 名但向量路未进前 5）几乎全灭，导致包含精确答案但语义偏离的 cell（如 "hand-painted bowl" 对 "birthday" 查询）被系统性丢弃。
+- **修复方案**：
+  1. **BM25 标点清洗**：对 query token 和文档 token 统一执行 `re.sub(r'[^\w\s]', '', token)`。
+  2. **提升 keyword_weight**：从 `0.25` 提升至 `0.4`，让事实型问题的字面匹配获得更大话语权。
+  3. **停用词过滤**：定义中英文停用词集合，在 BM25 计算前从 query tokens 中移除。
+  4. **降低 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.015` 降至 `0.008`。
+- **预期收益**：修复后 `when` 类和精确事实题的召回率应显著提升，缩小与 baseline 在 0.021 差距上的最后一块短板。
+
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem
 - 技术方案文档：`单会话级临时记忆系统（Session-scoped Working Memory）技术方案.md`

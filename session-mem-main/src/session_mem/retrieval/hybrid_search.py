@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from collections import defaultdict
 from typing import Callable
 
@@ -10,6 +11,310 @@ from session_mem.llm.base import LLMClient
 from session_mem.storage.base import CellStore, VectorIndex
 
 logger = logging.getLogger(__name__)
+
+# 中英文常用停用词
+_STOPWORDS = {
+    # English
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "must",
+    "shall",
+    "can",
+    "need",
+    "to",
+    "of",
+    "in",
+    "for",
+    "on",
+    "with",
+    "at",
+    "by",
+    "from",
+    "as",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "between",
+    "under",
+    "again",
+    "further",
+    "then",
+    "once",
+    "here",
+    "there",
+    "when",
+    "where",
+    "why",
+    "how",
+    "all",
+    "each",
+    "few",
+    "more",
+    "most",
+    "other",
+    "some",
+    "such",
+    "no",
+    "nor",
+    "not",
+    "only",
+    "own",
+    "same",
+    "so",
+    "than",
+    "too",
+    "very",
+    "just",
+    "and",
+    "but",
+    "or",
+    "yet",
+    "if",
+    "because",
+    "although",
+    "though",
+    "while",
+    "since",
+    "until",
+    "unless",
+    "whether",
+    "either",
+    "neither",
+    "both",
+    "also",
+    "much",
+    "many",
+    "little",
+    "less",
+    "least",
+    "quite",
+    "rather",
+    "enough",
+    "even",
+    "still",
+    "already",
+    "almost",
+    "indeed",
+    "thus",
+    "hence",
+    "therefore",
+    "however",
+    "nevertheless",
+    "moreover",
+    "furthermore",
+    "besides",
+    "otherwise",
+    "instead",
+    "accordingly",
+    "consequently",
+    "subsequently",
+    "eventually",
+    "finally",
+    "initially",
+    "originally",
+    "previously",
+    "formerly",
+    "lately",
+    "recently",
+    "soon",
+    "immediately",
+    "instantly",
+    "directly",
+    "briefly",
+    "quickly",
+    "slowly",
+    "gradually",
+    "suddenly",
+    "ultimately",
+    "this",
+    "that",
+    "these",
+    "those",
+    "i",
+    "you",
+    "he",
+    "she",
+    "it",
+    "we",
+    "they",
+    "them",
+    "his",
+    "her",
+    "its",
+    "our",
+    "their",
+    "my",
+    "your",
+    "him",
+    "us",
+    "me",
+    # Chinese
+    "的",
+    "了",
+    "在",
+    "是",
+    "我",
+    "你",
+    "他",
+    "她",
+    "它",
+    "这",
+    "那",
+    "有",
+    "和",
+    "与",
+    "及",
+    "或",
+    "但",
+    "而",
+    "因",
+    "为",
+    "之",
+    "其",
+    "个",
+    "们",
+    "等",
+    "很",
+    "都",
+    "也",
+    "就",
+    "不",
+    "会",
+    "要",
+    "能",
+    "可",
+    "上",
+    "下",
+    "中",
+    "大",
+    "小",
+    "来",
+    "去",
+    "过",
+    "到",
+    "从",
+    "向",
+    "把",
+    "被",
+    "让",
+    "给",
+    "对",
+    "将",
+    "还",
+    "说",
+    "进行",
+    "通过",
+    "根据",
+    "关于",
+    "没有",
+    "已经",
+    "正在",
+    "可以",
+    "应该",
+    "需要",
+    "认为",
+    "使用",
+    "做",
+    "出",
+    "想",
+    "看",
+    "见",
+    "得",
+    "着",
+    "比",
+    "更",
+    "最",
+    "太",
+    "非常",
+    "比较",
+    "一下",
+    "一个",
+    "一种",
+    "这些",
+    "那些",
+    "什么",
+    "怎么",
+    "怎样",
+    "谁",
+    "哪",
+    "哪儿",
+    "哪里",
+    "多少",
+    "几",
+    "为什么",
+    "如何",
+    "时候",
+    "地方",
+    "东西",
+    "事情",
+    "问题",
+    "情况",
+    "方面",
+    "部分",
+    "其他",
+    "另外",
+    "其余",
+    "任何",
+    "所有",
+    "一切",
+    "每个",
+    "各种",
+    "各位",
+    "大家",
+    "我们",
+    "你们",
+    "他们",
+    "她们",
+    "它们",
+    "这里",
+    "那里",
+    "这边",
+    "那边",
+    "此时",
+    "此刻",
+    "当时",
+    "那时",
+    "现在",
+    "过去",
+    "未来",
+    "以前",
+    "以后",
+    "之后",
+    "之前",
+    "然后",
+    "接着",
+    "随后",
+    "期间",
+}
+
+
+def _clean_token(token: str) -> str:
+    """去除 token 中的标点符号并转小写。"""
+    return re.sub(r"[^\w\s]", "", token).lower()
 
 
 class HybridSearcher:
@@ -20,16 +325,20 @@ class HybridSearcher:
         vector_index: VectorIndex,
         cell_store: CellStore,
         session_id: str,
-        vector_weight: float = 0.75,
-        keyword_weight: float = 0.25,
+        vector_weight: float | None = None,
+        keyword_weight: float | None = None,
         embedding_client: LLMClient | None = None,
         embed_fn: Callable[[str], list[float] | None] | None = None,
     ):
         self.vector_index = vector_index
         self.cell_store = cell_store
         self.session_id = session_id
-        self.vector_weight = vector_weight
-        self.keyword_weight = keyword_weight
+        self.vector_weight = (
+            vector_weight if vector_weight is not None else RetrievalConfig.VECTOR_WEIGHT
+        )
+        self.keyword_weight = (
+            keyword_weight if keyword_weight is not None else RetrievalConfig.KEYWORD_WEIGHT
+        )
         self.embedding_client = embedding_client
         self.embed_fn = embed_fn
 
@@ -126,7 +435,11 @@ class HybridSearcher:
 
     def keyword_scores(self, query: str, cells: list) -> dict[str, float]:
         """为每个 Cell 计算关键词匹配分数（BM25 + 实体奖励）。"""
-        query_tokens = query.lower().split()
+        query_tokens = [
+            _clean_token(t)
+            for t in query.split()
+            if _clean_token(t) and _clean_token(t) not in _STOPWORDS
+        ]
         if not query_tokens:
             return {}
 
@@ -137,9 +450,9 @@ class HybridSearcher:
         for cell in cells:
             doc_tokens: list[str] = []
             for kw in cell.keywords or []:
-                doc_tokens.append(kw.lower())
-            for word in (cell.raw_text or "").lower().split():
-                doc_tokens.append(word)
+                doc_tokens.append(_clean_token(kw))
+            for word in (cell.raw_text or "").split():
+                doc_tokens.append(_clean_token(word))
             cell_docs[cell.id] = doc_tokens
 
         # 计算 session-level IDF
@@ -148,7 +461,8 @@ class HybridSearcher:
         for doc_tokens in cell_docs.values():
             seen_in_doc = set(doc_tokens)
             for token in seen_in_doc:
-                df[token] += 1
+                if token:
+                    df[token] += 1
 
         idf: dict[str, float] = {}
         for token, freq in df.items():
@@ -179,19 +493,23 @@ class HybridSearcher:
                 denom = tf + k1 * (1 - b + b * (doc_len / avgdl))
                 bm25_score += idf.get(token, 0.0) * (tf * (k1 + 1)) / denom
 
-            # 实体匹配奖励
+            # 实体匹配奖励（对原始实体也做清洗后匹配）
             entity_bonus = 0.0
-            cell_entities = {e.lower() for e in (cell.entities or [])}
+            cell_entities = {_clean_token(e) for e in (cell.entities or [])}
             overlap = unique_query_tokens & cell_entities
             if overlap:
                 entity_bonus = min(0.3, 0.15 * len(overlap))
 
-            scores[cell.id] = bm25_score + entity_bonus
+            total_score = bm25_score + entity_bonus
+            if total_score > 0:
+                scores[cell.id] = total_score
         return scores
 
     def _exact_keyword_scan(self, query: str) -> list[tuple[str, float]]:
         """精确关键词扫描：匹配 summary 和 keywords，返回按匹配度排序的列表。"""
-        query_tokens = query.lower().split()
+        query_tokens = [
+            t for t in {_clean_token(t) for t in query.split()} if t and t not in _STOPWORDS
+        ]
         if not query_tokens:
             return []
 
@@ -203,8 +521,8 @@ class HybridSearcher:
 
         scored: list[tuple[str, float]] = []
         for cell in cells:
-            text = (cell.summary or "").lower()
-            keywords = [k.lower() for k in (cell.keywords or [])]
+            text = _clean_token(cell.summary or "")
+            keywords = [_clean_token(k) for k in (cell.keywords or [])]
             match_count = 0
             for token in query_tokens:
                 if token in text or any(token in kw for kw in keywords):

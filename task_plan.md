@@ -8,7 +8,7 @@
 实现 `session-mem` 单会话级临时记忆系统的 MVP，包含三层缓冲架构、Cell 生成与检索、时间戳解析、SQLite + sqlite-vec 存储，并通过 LoCoMo 拼接会话完成基准验证。
 
 ## Current Phase
-Phase 8
+Phase 9
 
 ## Phases
 
@@ -235,8 +235,8 @@ Phase 8
       3. `locomo_runner.py:_answer()` 的 system 指令增加一条补充："If the question asks about time, dates, or when something happened, you must answer with the specific absolute timestamp or date explicitly."
     - **涉及代码**：`src/session_mem/core/memory_system.py`、`src/session_mem/core/working_memory.py`、`benchmarks/locomo_runner.py`、`tests/test_retrieval.py`。
     - **验证结果**：全部 106 个测试通过；black + ruff 通过。新增 `test_retrieve_context_sorts_activated_cells_by_timestamp` 和 `test_working_memory_includes_timestamp_prefix`。
-  - **Phase 8.8**（待执行，2026-04-16 新增）
-    12. [ ] **P0 - benchmark latency 口径统一 + TTFT 首 token 延迟采集**：
+  - **Phase 8.8**（已完成）
+    12. [x] **P0 - benchmark latency 口径统一 + TTFT 首 token 延迟采集**：
       - **问题**：当前 `avg_session_mem_latency_ms` 仅测量 `retrieve_context()`（检索+组装，约 2.8s），而 `avg_baseline_latency_ms` / `avg_sliding_latency_ms` 测量的是完整 LLM 回答生成时间（约 10-12s）。三者口径不一致，导致 session-mem 的延迟数据无法与 baseline/sliding 直接对比，存在显著误导性。
       - **改进项 1 - 统一总延迟口径**：
         - 为 session-mem 新增 `session_mem_total_latency_ms` = `session_mem_latency_ms`（检索）+ LLM 生成时间。
@@ -269,6 +269,27 @@ Phase 8
   6. **session-mem Judge 评分 vs baseline 差距缩小到 <0.05**（当前 0.153）
   7. 热区 token 从 ~32 提升到 ~300-500
   8. 激活 Cell 数量从刚性 6-7 变为动态 2-8
+
+### Phase 9.1: 检索召回率修复——BM25 标点清洗 + RRF 权重调整 + Query 停用词过滤
+- **Status:** in_progress
+- **问题发现（v5 benchmark 分析）**：
+  - Session-mem Judge 0.528 vs Baseline 0.549，差距虽小但缺陷高度集中：session-mem 在 `when` 类问题上仅 0.076（baseline 0.182），大量精确事实题回答「文中未提及」。
+  - 根因诊断：`hybrid_search.py` 的 BM25 实现存在 **标点未清洗** 的 bug——query token `"birthday?"` 与文档 token `"birthday."` 因标点差异被判定为不匹配，导致包含答案的 cell 在 BM25 路得 0 分。
+  - 同时 `MEMORY_SYSTEM_THRESHOLD = 0.015` 过高，对 keyword-only hit（BM25 排名 7+ 但向量路未进前 5）的 cell 产生硬截断，大量事实片段被丢弃。
+  - Query 中停用词（`how`, `long`, `ago`, `was`）稀释了有效关键词密度，进一步降低 BM25 召回精度。
+- **修复动作**：
+  1. [ ] **BM25 标点清洗**：在 `keyword_scores()` 中对 query token 和文档 token 统一执行 `re.sub(r'[^\w\s]', '', token)`，消除标点干扰。
+  2. [ ] **提升 BM25 路在 RRF 中的权重**：从当前 `vector_weight=0.75 / keyword_weight=0.25` 调整为 `vector_weight=0.6 / keyword_weight=0.4`，让事实型问题的字面匹配信号获得更强话语权。
+  3. [ ] **Query 停用词过滤**：定义中英文停用词集合，在计算 BM25 前从 query tokens 中剔除 `how/long/ago/was/the/and` 等无意义词，提升关键词匹配密度。
+  4. [ ] **降低 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.015` 降至 `0.008`，允许更多 keyword-only hit 进入候选池。
+- **涉及代码**：
+  - `src/session_mem/retrieval/hybrid_search.py`（标点清洗、停用词过滤）
+  - `src/session_mem/config.py`（RRF 权重、`MEMORY_SYSTEM_THRESHOLD`）
+  - `tests/test_retrieval.py`（新增 BM25 标点清洗测试、停用词过滤测试）
+- **验收标准**：
+  1. 构造 query `"birthday?"` 与文档 `"birthday."`，BM25 能正确匹配。
+  2. 全部单元测试通过；black + ruff 通过。
+  3. 计划文件同步更新为 Phase 9.1 并提交 git。
 
 ## Key Questions
 1. ✅ 选择 Python 还是 Node.js 作为主要实现语言？ → **Python**

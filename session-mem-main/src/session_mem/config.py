@@ -22,7 +22,11 @@ class RetrievalConfig:
     RRF_FALLBACK_THRESHOLD: float = 0.015
 
     # MemorySystem 主阈值（RRF score >= 此值才进入 selected）
-    MEMORY_SYSTEM_THRESHOLD: float = 0.015
+    MEMORY_SYSTEM_THRESHOLD: float = 0.008
+
+    # 双路融合权重
+    VECTOR_WEIGHT: float = 0.6
+    KEYWORD_WEIGHT: float = 0.4
 
     # BM25 参数
     BM25_K1: float = 1.5
