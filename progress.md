@@ -58,6 +58,20 @@
   - `src/session_mem/core/memory_system.py`
   - `tests/test_retrieval.py`
 
+### Phase 9.4: 检索阈值修复 + 时间戳机制整顿
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **Actions taken:**
+  1. 修改 `src/session_mem/config.py`：
+     - `MEMORY_SYSTEM_THRESHOLD` 从 `0.008` 提升至 `0.015`，恢复 threshold 的动态筛选作用，阻止低分干扰 Cell 因凑数机制涌入 Working Memory。
+  2. 修改 `benchmarks/data_loader.py`：
+     - 将 `_parse_session_datetime()` 中两处 `datetime.now(timezone.utc)` fallback 替换为固定基线日期 `datetime(2023, 5, 1, tzinfo=timezone.utc)`，彻底消除 benchmark 运行当天日期污染 Cell 时间戳的问题。
+     - 增加 `logger.warning()` 在空字符串或解析失败时发出警告，便于排查数据质量问题。
+  3. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `src/session_mem/config.py`
+  - `benchmarks/data_loader.py`
+- **Next step:** 跑 v8 benchmark（304 QA）验证准确率差距是否从 0.081 回落至 ≤0.05，同时确认激活 Cell 数量不再刚性 8-10 个。
+
 ### v7 Benchmark 结果分析（Phase 9.1+9.2+9.2.1+9.3 联合评估）
 - **Status:** 结果已产出，核心指标恶化，需进入 Phase 9.4 修复
 - **数据集**：`locomo_phase821_2sess_allqa_v7.json`，304 QA

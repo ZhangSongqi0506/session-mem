@@ -236,10 +236,20 @@
   3. **Phase 9.3 移除 `linked_prev`**：部分需要前序因果上下文的查询（如跨 Cell 约束）失去支撑，可能小幅加剧零分率。
 
 - **修复方向（Phase 9.4 已规划）**：
-  1. **检索阈值修复**：提高 `MEMORY_SYSTEM_THRESHOLD`（0.008 → 0.015/0.018），降低 `max_cells`（8 → 6/7），恢复动态调节能力。
+  1. **检索阈值修复**：提高 `MEMORY_SYSTEM_THRESHOLD`（0.008 → 0.015），恢复动态调节能力。
   2. **时间戳机制整顿**：
-     - 修复 `data_loader.py` 的 `datetime.now()` fallback 为固定基准日期，保证 Cell 时间戳反映真实对话发生时间。
+     - 修复 `data_loader.py` 的 `datetime.now()` fallback 为固定基准日期 `2023-05-01`，保证 Cell 时间戳反映真实对话发生时间。
      - 确认 `WorkingMemory.to_prompt()` 中的时间戳前缀足够醒目，让 LLM 能基于真实对话发生时间回答时间类问题。无需额外提取 turn text 中的 mentioned time。
+
+## Phase 9.4: 检索阈值修复 + 时间戳机制整顿
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **Actions taken:**
+  1. `src/session_mem/config.py`：`MEMORY_SYSTEM_THRESHOLD` 从 `0.008` 提升至 `0.015`，阻止低分干扰 Cell 涌入。
+  2. `benchmarks/data_loader.py`：将 `datetime.now(timezone.utc)` fallback 替换为固定基线 `datetime(2023, 5, 1, tzinfo=timezone.utc)`，并增加 `logger.warning` 记录解析失败事件，避免 benchmark 时间戳被当前执行日期污染。
+  3. 全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `src/session_mem/config.py`
+  - `benchmarks/data_loader.py`
 
 ## Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过）

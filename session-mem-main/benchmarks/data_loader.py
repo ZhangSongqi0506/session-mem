@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class LoCoMoSession:
@@ -25,10 +28,16 @@ class LoCoMoSession:
         return len(self.turns)
 
 
+_FALLBACK_BASELINE = datetime(2023, 5, 1, tzinfo=timezone.utc)
+
+
 def _parse_session_datetime(date_str: str | None) -> datetime:
-    """从 LoCoMo 日期字符串解析为 datetime，失败时返回当前 UTC 时间。"""
+    """从 LoCoMo 日期字符串解析为 datetime，失败时返回固定基线日期。"""
     if not date_str:
-        return datetime.now(timezone.utc)
+        logger.warning(
+            "Empty date_str in LoCoMo data; using fallback baseline %s", _FALLBACK_BASELINE.date()
+        )
+        return _FALLBACK_BASELINE
     # 常见格式: "7 May 2023" 或 "May 7, 2023"
     for fmt in ("%d %B %Y", "%B %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
         try:
@@ -36,7 +45,12 @@ def _parse_session_datetime(date_str: str | None) -> datetime:
             return dt.replace(tzinfo=timezone.utc)
         except ValueError:
             continue
-    return datetime.now(timezone.utc)
+    logger.warning(
+        "Failed to parse date_str %r; using fallback baseline %s",
+        date_str,
+        _FALLBACK_BASELINE.date(),
+    )
+    return _FALLBACK_BASELINE
 
 
 def _build_timestamp(session_dt: datetime, turn_index: int) -> str:
