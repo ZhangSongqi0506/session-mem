@@ -37,12 +37,12 @@
   - `tests/test_retrieval.py`
 
 ### Phase 9.2.1: BM25 实体扩展候选池去前置过滤
-- **Status:** complete（代码已修改、测试通过）
+- **Status:** ~~complete~~ **reverted（已回退）**
 - **Actions taken:**
-  1. 修改 `src/session_mem/core/memory_system.py`：
-     - 取消实体扩展候选池的 `seen` 前置过滤，改为**全部 session cell** 参与 BM25 评分。
-     - 全局排序后遍历，跳过已在 `seen` 中的 cell，继续向下取，直到凑满 `extra_limit=3` 个新增 cell 为止。
-  2. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+  1. 曾尝试取消 `seen` 前置过滤，改为全部 session cell 参与 BM25 评分，排序后跳过 seen 向下补足 3 个。
+  2. 经确认：实体扩展应只做**补充**，若 top 3 BM25 高分 cell 已在召回池中，不应继续向下凑数。
+  3. 回退代码到 9.2 原实现（前置过滤 seen，取 top extra_limit）。
+  4. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
 - **涉及文件:**
   - `src/session_mem/core/memory_system.py`
 

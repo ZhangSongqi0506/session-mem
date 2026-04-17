@@ -306,17 +306,9 @@ Phase 9
   3. [x] 全部单元测试通过；black + ruff 通过。
 
 ### Phase 9.2.1: BM25 实体扩展候选池去前置过滤
-- **Status:** complete（代码已修改、测试通过、已提交 git）
-- **问题**：Phase 9.2 实现中，BM25 实体扩展的候选池预先排除了 `seen`（已入选 cell），导致若前 `extra_limit` 名高 BM25 分 cell 本就在召回池中，实际补充数量可能不足 3 个，甚至为 0。
-- **修复**：
-  1. 取消候选池的前置 `seen` 过滤，让**全部 session cell** 参与 BM25 评分。
-  2. 全局排序后，依次跳过 `seen` 中的 cell，取够 `extra_limit=3` 个真正新增的细胞为止。
-- **涉及代码**：
-  - `src/session_mem/core/memory_system.py`（实体扩展逻辑）
-- **验收标准**：
-  1. [x] 实体扩展始终有机会补充最多 3 个新 cell，不因前置过滤而缩池。
-  2. [x] 已激活 cell 不会重复加入。
-  3. [x] 全部单元测试通过；black + ruff 通过。
+- **Status:** ~~complete~~ **reverted（已回退）**
+- **原因**：实体扩展的定位是**补充**召回池。先过滤 `seen` 再取 top 3 是正确行为——如果 BM25 得分最高的几个 cell 已经被召回，说明当前扩展查询没有带来新的有效候选，此时不应继续向下翻找凑数。强行补足 3 个只会引入低相关 cell。
+- **结论**：保持 Phase 9.2 的原实现不变（候选池前置过滤 `seen`，取 top extra_limit 做补充）。
 
 ### Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过、已提交 git）
