@@ -344,7 +344,7 @@ Phase 9
   - **修复动作**：
     1. **提高 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.008` 恢复至 `0.015`（v5 值）或更高（如 `0.018`）。
     2. **降低 `max_cells` 上限**：从 `8` 降至 `6` 或 `7`，恢复弹性。
-    3. **可选：重新评估 9.3 移除 `linked_prev` 的影响**：若因果链问题零分率异常高，考虑恢复带门槛的 `linked_prev`。
+    3. **严格保持时序排序**：`retrieve_context()` 中 `activated_cells` 必须继续按 `timestamp_start` 升序排列（Phase 8.7 的约束），不得以 RRF 分数或其他指标重新打乱叙事时间线。调整 threshold 和 max_cells 时，需验证时序排序不被破坏。
 
 - **Part B: 时间戳机制整顿**
   - **问题发现**：v7 中出现大量时间戳为 `2026-04-17`（即当前运行日期）的 Cell，原因是 `data_loader.py` 在 session date 解析失败时 fallback 到 `datetime.now()`。
