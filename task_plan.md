@@ -335,6 +335,31 @@ Phase 9
   1. `retrieve_context()` 不再自动加载命中 Cell 的 `linked_prev` 前驱 Cell。
   2. 全部单元测试通过；black + ruff 通过。
   3. 计划文件同步更新为 Phase 9.3 并提交 git。
+
+### Phase 9.4: 检索阈值与上限修复——抑制低分干扰 Cell 涌入
+- **Status:** pending（问题已定位，待开发）
+- **v7 benchmark 诊断结论**：
+  - SM Judge 0.479 vs Baseline 0.560，差距 **0.081**（v5 仅 0.022），核心指标严重恶化。
+  - 激活 Cell 数量**刚性化**为 8-10 个（82.6% 恰好 8 个），动态调节能力完全丧失。
+  - SM 零分但 Baseline ≥ 0.5 的案例增至 **57/304**。
+- **根因**：
+  1. `MEMORY_SYSTEM_THRESHOLD = 0.008`（Phase 9.1 修改）过低，RRF 分数尺度下几乎无门槛，所有候选均通过 threshold，直接顶满 `max_cells = 8`。
+  2. `max_cells = 8` 过高，强迫系统在高分相关 cell 之外再引入 5-6 个低分干扰 cell，LLM 被噪声淹没。
+  3. 9.2 的 BM25 实体扩展虽然抑制了通用 cell（激活率下降 24%-43%），但 threshold 过低导致这些 cell 仍因"凑数"被大量召回。
+- **修复方案**：
+  1. **提高 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.008` 恢复至 `0.015`（v5 值）或更高（如 `0.020`），恢复 threshold 对低分候选的截断能力。
+  2. **降低 `max_cells` 上限**：从 `8` 降至 `6` 或 `7`，减少弱相关 cell 的混入空间。
+  3. **可选：重新评估 9.3 移除 `linked_prev` 的影响**：若 v7 中因果/跨 Cell 问题零分率异常高，考虑恢复带门槛的 `linked_prev` 加载。
+- **涉及代码**：
+  - `src/session_mem/config.py`（`MEMORY_SYSTEM_THRESHOLD`）
+  - `src/session_mem/core/memory_system.py`（`max_cells` 计算逻辑）
+- **验收标准**：
+  1. v7 benchmark 重跑后（v8）激活 Cell 数量分布恢复弹性（不再刚性 8-10 个）。
+  2. SM Judge 与 Baseline 差距缩小至 ≤0.05。
+  3. Token 节省率保持 ≥40%。
+  4. 全部单元测试通过；black + ruff 通过。
+  5. 计划文件同步更新并提交 git。
+
 - **问题发现（v5 benchmark 深度分析）**：
   - 大量早期通用背景 cell（如 C_001、C_010）在 v5 中被激活了 **80-90%** 的 QA 次数，严重挤占 prompt 空间。
   - 根因：`memory_system.py` 的实体共现激活机制使用 `find_by_entity()` 做硬等值匹配：一旦召回 cell 的 entities 中包含高频实体（如 `Jon`、`Gina`），系统就会把会话中**所有**含该实体的 cell 都拉进来，实质上变成了全表扫描。

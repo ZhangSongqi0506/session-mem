@@ -211,6 +211,35 @@
   - 这样既公平打分，又严格保持"只做补充"的语义。
 - **benchmark 策略**：与 9.2 / 9.3 一并完成后统一跑 **v7 benchmark**。
 
+## v7 Benchmark 结果分析（2026-04-17）
+- **数据集**：`locomo_phase821_2sess_allqa_v7.json`，304 QA
+- **核心指标**：
+  | Metric | v5 | v7 | Change |
+  |--------|------|------|--------|
+  | Baseline Judge | 0.549 | 0.560 | +0.011 |
+  | Session-mem Judge | 0.528 | **0.479** | **-0.049** |
+  | Gap | 0.022 | **0.081** | **恶化 0.059** |
+  | Token Saving vs Baseline | 49.7% | **64.1%** | +14.4% |
+  | Avg Activated Cells | ~6.8 | **8.2** | +1.4 |
+  | Cell Count Distribution | 动态 6-7 | **刚性 8-10** (82.6% 为 8 个) | 严重僵化 |
+
+- **关键发现**：
+  1. **激活 Cell 数量刚性化是准确率暴跌的主因**：v7 中 251/304（82.6%）的 QA 恰好激活 8 个 cell，49/304（16.1%）激活 9 个，几乎无弹性。这说明 `MEMORY_SYSTEM_THRESHOLD = 0.008` 过低，导致几乎所有候选都通过 threshold，直接顶满 `max_cells = 8`。
+  2. **低分干扰 Cell 大量涌入**：当系统被迫拉满 8 个 cell 时，即使高分相关 cell 只有 2-3 个，剩下的 5-6 个也是低分通用/边缘 cell。LLM 被海量弱相关信息淹没，导致精确事实题回答错误。
+  3. **SM 零分问题恶化**：v7 中 SM 得 0 分但 baseline ≥ 0.5 的案例从 v5 的 35 个暴涨到 **57 个**。
+  4. **BM25 实体扩展确实抑制了通用 cell**：早期通用背景 cell（C_001, C_002, C_006, C_009）的激活率相比 v5 下降了 24%-43%，证明 9.2 的 IDF 过滤机制生效。但 threshold 过低导致这些被抑制的通用 cell 仍然因 "凑数" 机制被大量拉入。
+  5. **when 类问题依然薄弱**：v7 中 when-type（67 题）Baseline 0.179，SM 0.105，差距 0.074。Phase 9.1 的 BM25 标点清洗和停用词过滤效果未能在最终指标上体现，被 threshold 过低导致的整体噪声所掩盖。
+
+- **根因诊断**：
+  1. **`MEMORY_SYSTEM_THRESHOLD = 0.008` 过低**：RRF 分数尺度下，0.008 几乎等于无门槛，导致 `min_cells`/`max_cells` 的动态调节失效，系统总是顶满上限。
+  2. **`max_cells = 8` 过高**：当会话 cell 总数 24+ 时，`max_cells = max(min_cells+1, min(8, total_cells//3))` 固定为 8，强迫系统引入低分干扰项。
+  3. **Phase 9.3 移除 `linked_prev`**：部分需要前序因果上下文的查询（如跨 Cell 约束）失去支撑，可能小幅加剧零分率。
+
+- **修复方向（拟定 Phase 9.4）**：
+  1. **提高 `MEMORY_SYSTEM_THRESHOLD`**：从 0.008 至少恢复到 0.015（v5 值），或进一步提高到 0.020，恢复动态调节能力。
+  2. **降低 `max_cells` 上限**：从 8 降至 6 或 7，减少低分干扰 Cell 的混入空间。
+  3. **考虑将实体扩展与主阈值联动**：如果 top 候选的 RRF 分数已经很低，即使 threshold 通过，也应减少 max_cells 上限，避免"为凑数而凑数"。
+
 ## Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过）
 - **benchmark 策略**：与 9.2 一并完成后统一跑 **v7 benchmark**。

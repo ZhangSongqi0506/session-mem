@@ -57,7 +57,24 @@
 - **涉及文件:**
   - `src/session_mem/core/memory_system.py`
   - `tests/test_retrieval.py`
-- **Next step**：Phase 9.1 / 9.2 / 9.3 代码均已完成，统一跑 **v7 benchmark** 评估整体效果。
+
+### v7 Benchmark 结果分析（Phase 9.1+9.2+9.2.1+9.3 联合评估）
+- **Status:** 结果已产出，核心指标恶化，需进入 Phase 9.4 修复
+- **数据集**：`locomo_phase821_2sess_allqa_v7.json`，304 QA
+- **关键结果**：
+  - Baseline Judge: 0.560，SM Judge: **0.479**，差距 **0.081**（v5 仅 0.022）❌
+  - Token 节省率: **64.1%**（v5 为 49.7%）✅
+  - 平均激活 Cell 数: **8.2**（v5 约 6.8），分布极度刚性：8 个 cell 占 82.6%，9 个占 16.1% ❌
+  - SM 零分但 baseline ≥ 0.5 的案例: **57/304**（v5 仅 35/304）❌
+- **根因分析**：
+  1. **`MEMORY_SYSTEM_THRESHOLD = 0.008` 过低**：RRF 分数尺度下几乎无门槛，所有候选都通过 threshold，直接顶满 `max_cells = 8`。
+  2. **`max_cells = 8` 过高**：强迫系统在 2-3 个高分相关 cell 之外，再拉入 5-6 个低分干扰 cell，LLM 被噪声淹没。
+  3. **9.2 的 BM25 实体扩展确实有效抑制了通用 cell**（C_001/C_002/C_006 激活率比 v5 下降 24%-43%），但 threshold 过低导致这些被抑制的 cell 仍因"凑数"被大量召回。
+  4. **when 类问题**（67 题）Baseline 0.179，SM 0.105，差距 0.074；9.1 的标点清洗和停用词过滤效果被整体噪声掩盖。
+- **修复方向（拟定 Phase 9.4）**：
+  1. 提高 `MEMORY_SYSTEM_THRESHOLD`：从 0.008 恢复到 0.015 或更高。
+  2. 降低 `max_cells` 上限：从 8 降至 6 或 7。
+  3. 必要时重新评估 9.3 移除 `linked_prev` 的影响。
 
 ## Session: 2026-04-16
 
