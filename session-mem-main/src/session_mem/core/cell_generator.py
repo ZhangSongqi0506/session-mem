@@ -61,10 +61,20 @@ class CellGenerator:
 
         confidence = 0.3 if llm_failed else float(data.get("confidence", 0.5))
 
+        _VALID_CELL_TYPES = {"fact", "constraint", "preference", "task", "fragmented"}
+        cell_type = data.get("cell_type", "fact")
+        if cell_type not in _VALID_CELL_TYPES:
+            logger.warning(
+                "Invalid cell_type %r from LLM for cell %s; falling back to 'fact'",
+                cell_type,
+                cell_id,
+            )
+            cell_type = "fact"
+
         cell = MemoryCell(
             id=cell_id,
             session_id=session_id,
-            cell_type=data.get("cell_type", "fact"),
+            cell_type=cell_type,
             confidence=confidence,
             summary=summary,
             keywords=keywords,
