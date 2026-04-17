@@ -157,24 +157,21 @@ class MemorySystem:
 
         if all_entities and self.hybrid:
             expansion_query = " ".join(all_entities)
-            # 收集未入选的候选 cell，并回填 raw_text 供 BM25 计算
+            # 9.2.1: 全部 cell 参与 BM25 评分（不预过滤 seen），取全局 top extra_limit，再只补其中未入选的
             session_cells = self.cell_store.list_by_session(self.session_id)
-            candidates: list[MemoryCell] = []
             for c in session_cells:
-                if c.id not in seen:
-                    c.raw_text = self.text_store.load(c.id) or ""
-                    candidates.append(c)
-            if candidates:
-                bm25_scores = self.hybrid.keyword_scores(expansion_query, candidates)
-                # 按 BM25 得分排序，取前 extra_limit
+                c.raw_text = self.text_store.load(c.id) or ""
+            if session_cells:
+                bm25_scores = self.hybrid.keyword_scores(expansion_query, session_cells)
                 sorted_candidates = sorted(bm25_scores.items(), key=lambda x: x[1], reverse=True)
                 for cid, score in sorted_candidates[:extra_limit]:
-                    if score > 0:
-                        cell = self.cell_store.get(cid)
-                        if cell and cell.id not in seen:
-                            cell.raw_text = self.text_store.load(cid)
-                            activated.append(cell)
-                            seen.add(cell.id)
+                    if score <= 0 or cid in seen:
+                        continue
+                    cell = self.cell_store.get(cid)
+                    if cell:
+                        cell.raw_text = self.text_store.load(cid)
+                        activated.append(cell)
+                        seen.add(cell.id)
 
         # 8. 按 timestamp_start 升序排列 activated cells，恢复自然叙事顺序
         activated.sort(key=lambda c: (c.timestamp_start is None, c.timestamp_start or ""))
