@@ -6,7 +6,7 @@
 ## Session: 2026-04-17
 
 ### Phase 9.1: 检索召回率修复——BM25 标点清洗 + RRF 权重调整 + Query 停用词过滤
-- **Status:** in_progress
+- **Status:** complete（代码已修改、测试通过、已提交 git）
 - **问题发现**：
   - v5 benchmark（304 QA，2 sessions 全量）分析显示 session-mem 与 baseline 差距仅 0.021（0.528 vs 0.549），但 `when` 类问题 SM 仅 0.076（baseline 0.182），大量精确事实题回答「文中未提及」。
   - 根因：`hybrid_search.py` 的 BM25 实现存在 **标点未清洗** bug；`vector_weight=0.75 / keyword_weight=0.25` 导致字面匹配信号过弱；query 中停用词稀释关键词密度；`MEMORY_SYSTEM_THRESHOLD=0.015` 对 keyword-only hit 截断过严。
@@ -30,7 +30,13 @@
   1. **废弃 `find_by_entity` 的硬匹配逻辑**：不再遍历每个实体去数据库做等值查询。
   2. **改用 BM25 做实体扩展**：将当前已激活 cell 的 entities 拼接成扩展查询（如 `"Jon dance studio Marley flooring"`），对未入选的候选 cell 调用 `hybrid_search.keyword_scores()` 进行 BM25 评分。
   3. **取 top `extra_limit` 加入激活列表**：BM25 的 IDF 机制会天然压低高频实体（如 `Jon`）的权重，同时放大低频特异性实体（如 `Marley flooring`）的提权效果，无需硬编码 50% 阈值。
-- **Next step**：待 benchmark 重跑 v6 验证 Phase 9.1 效果后，再决定是否立即启动 Phase 9.2 开发。
+- **Next step**：Phase 9.1 代码已修改完成并提交 git（`e308632`），不再单独跑 benchmark 验证。待 Phase 9.2 和 9.3 全部完成后，统一跑 **v7 benchmark** 评估整体效果。
+
+### Phase 9.3: 移除 linked_prev 因果链断裂防护
+- **Status:** pending（计划已写入三个计划文件）
+- **决策**：暂时移除 `memory_system.py:retrieve_context()` 中无条件加载 `linked_prev` 前驱 Cell 的逻辑。
+- **原因**：单层无条件回溯易引入弱相关早期 Cell，挤压真正含答案的后期 Cell；`causal_deps` 未启用，当前防护价值有限。
+- **Next step**：与 Phase 9.2 并行或在其后实施。待 9.2 和 9.3 均完成后统一跑 **v7 benchmark**。
 
 ## Session: 2026-04-16
 

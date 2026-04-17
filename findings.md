@@ -188,9 +188,21 @@
   3. **停用词过滤**：定义中英文停用词集合，在 BM25 计算前从 query tokens 中移除。
   4. **降低 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.015` 降至 `0.008`。
 - **预期收益**：修复后 `when` 类和精确事实题的召回率应显著提升，缩小与 baseline 在 0.021 差距上的最后一块短板。
+- **benchmark 策略**：9.1 代码修改完成并提交 git 后，不再单独跑一轮 benchmark。待 9.2 和 9.3 全部完成后，统一跑 **v7 benchmark** 评估整体效果。
 
 ## Phase 9.2: 实体共现激活增加实体特异性过滤（待开发）
 - **Status:** pending
+- **benchmark 策略**：与 9.3 全部完成后统一跑 **v7 benchmark**。
+
+## Phase 9.3: 移除 linked_prev 因果链断裂防护
+- **Status:** pending
+- **benchmark 策略**：与 9.2 全部完成后统一跑 **v7 benchmark**。
+- **决策背景**：
+  - 当前 `memory_system.py:retrieve_context()` 中命中 Cell 后会无条件加载其 `linked_prev` 前驱 Cell。该机制在 LoCoMo benchmark 中频繁将早期通用背景 Cell 拉入 Working Memory，挤占后期含精确答案 Cell 的空间。
+  - `causal_deps` 字段虽已定义但从未启用，单层 `linked_prev` 的防护效果有限，反而成为噪声 Cell 的混入通道。
+- **方案**：
+  1. **临时移除**：在 `retrieve_context()` 中删除 `linked_prev` 自动回溯逻辑，让检索结果纯粹由双路召回 + RRF + 实体扩展决定。
+  2. **未来恢复条件**：待需要时再实现为**带相关度过滤的递归回溯**（结合 BM25/RRF 分数阈值 + `max_chain_depth` 限制），避免无条件加载。
 - **问题发现（v5 benchmark 深度分析，2026-04-17）**：
   - 大量早期通用背景 cell（如 conv-30 的 C_010 被激活 **92.4%**、C_001 **86.7%**；conv-26 的 C_006 **87.9%**）严重挤占 prompt 空间，导致包含精确答案的后期细粒度 cell 被淹没。
   - 根因：`memory_system.py:retrieve_context()` 中的实体共现激活机制缺少对"实体 session 频率"的过滤。只要召回 cell 的 entities 中包含高频实体（如主角人名 `Jon`、`Gina`、`Caroline`、`Melanie`），`find_by_entity()` 就会把整个 session 中含该实体的所有 cell 都拉进来。

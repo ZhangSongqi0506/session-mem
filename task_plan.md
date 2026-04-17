@@ -293,6 +293,23 @@ Phase 9
 
 ### Phase 9.2: 实体共现激活改为 BM25 扩展
 - **Status:** pending（计划已确立，待后续开发）
+- **备注**：9.1 代码修改完成后不再单独跑 benchmark。本 Phase 与 9.3 全部完成后，统一跑 **v7 benchmark** 验证整体效果。
+
+### Phase 9.3: 移除 linked_prev 因果链断裂防护
+- **Status:** pending（计划已确立，待后续开发）
+- **备注**：与 9.2 并行或在其后实施，全部完成后统一跑 **v7 benchmark**。
+- **决策**：在检索阶段暂时移除 `linked_prev` 自动回溯逻辑。
+- **原因**：
+  1. 当前实现为**无条件单层回溯**，长链会话中容易拉入与查询弱相关的前序 Cell，挤占 prompt 空间。
+  2. `timestamp_start` 升序排列 + 动态 `min_cells`/`max_cells` 已能在多数场景下保证叙事连贯性。
+  3. `causal_deps` 多元依赖尚未启用，单层 `linked_prev` 的防护价值有限，反而成为无关 Cell 混入的通道。
+  4. 后续若需恢复因果链防护，将改为**带相关度门槛的递归回溯**（结合 BM25/RRF 分数过滤 + 最大深度限制），而非无条件加载。
+- **涉及代码**：
+  - `src/session_mem/core/memory_system.py`（删除或注释 `retrieve_context()` 中 `linked_prev` 自动加载块）
+- **验收标准**：
+  1. `retrieve_context()` 不再自动加载命中 Cell 的 `linked_prev` 前驱 Cell。
+  2. 全部单元测试通过；black + ruff 通过。
+  3. 计划文件同步更新为 Phase 9.3 并提交 git。
 - **问题发现（v5 benchmark 深度分析）**：
   - 大量早期通用背景 cell（如 C_001、C_010）在 v5 中被激活了 **80-90%** 的 QA 次数，严重挤占 prompt 空间。
   - 根因：`memory_system.py` 的实体共现激活机制使用 `find_by_entity()` 做硬等值匹配：一旦召回 cell 的 entities 中包含高频实体（如 `Jon`、`Gina`），系统就会把会话中**所有**含该实体的 cell 都拉进来，实质上变成了全表扫描。
