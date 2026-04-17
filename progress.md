@@ -19,7 +19,18 @@
      - `keyword_weight` 从 `0.25` 提升至 `0.4`，`vector_weight` 从 `0.75` 降至 `0.6`。
      - `MEMORY_SYSTEM_THRESHOLD` 从 `0.015` 降至 `0.008`。
   4. 更新 `tests/test_retrieval.py`：新增 BM25 标点清洗与停用词过滤测试。
-  5. 运行验证：全部测试通过；`black` + `ruff` 通过；提交 git。
+  5. 运行验证：全部测试通过；`black` + `ruff` 通过；提交 git `e308632`。
+
+### Phase 9.2: 实体共现激活增加实体特异性过滤
+- **Status:** pending（计划已确立，代码未开发）
+- **问题发现**：
+  - v5 benchmark 中早期通用背景 cell 被过度激活：C_010（92.4%）、C_001（86.7%）、C_006（87.9%）。
+  - 根因：`memory_system.py` 的实体共现激活对高频贯穿实体（如主角人名）无过滤，`find_by_entity()` 实质上变成了全表扫描。
+- **计划方案**：
+  1. 在 `retrieve_context()` 实体共现阶段计算各实体的 session cell 覆盖率。
+  2. 设定阈值（如 50%），高频实体不再触发共现扩展。
+  3. 可选增加时间邻近性约束（±2h）。
+- **Next step**：待 benchmark 重跑 v6 验证 Phase 9.1 效果后，再决定是否立即启动 Phase 9.2 开发。
 
 ## Session: 2026-04-16
 

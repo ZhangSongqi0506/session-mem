@@ -189,6 +189,21 @@
   4. **降低 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.015` 降至 `0.008`。
 - **预期收益**：修复后 `when` 类和精确事实题的召回率应显著提升，缩小与 baseline 在 0.021 差距上的最后一块短板。
 
+## Phase 9.2: 实体共现激活增加实体特异性过滤（待开发）
+- **Status:** pending
+- **问题发现（v5 benchmark 深度分析，2026-04-17）**：
+  - 大量早期通用背景 cell（如 conv-30 的 C_010 被激活 **92.4%**、C_001 **86.7%**；conv-26 的 C_006 **87.9%**）严重挤占 prompt 空间，导致包含精确答案的后期细粒度 cell 被淹没。
+  - 根因：`memory_system.py:retrieve_context()` 中的实体共现激活机制缺少对"实体 session 频率"的过滤。只要召回 cell 的 entities 中包含高频实体（如主角人名 `Jon`、`Gina`、`Caroline`、`Melanie`），`find_by_entity()` 就会把整个 session 中含该实体的所有 cell 都拉进来。
+  - 在 LoCoMo benchmark 中该问题被极端放大（仅 2 个固定主角贯穿全部对话），但真实场景下若存在高频贯穿实体（产品名、项目代号、常用地点），同样会触发通用 cell 的过度召回。
+- **修复方案**：
+  1. **计算实体 session 频率**：在实体共现阶段，先统计各实体覆盖的 cell 比例。
+  2. **设定高频实体阈值**：若某实体出现在超过 **50%** 的 cell 中，则不再用它触发 `find_by_entity` 共现扩展。
+  3. **保留低频特异性实体**：仅对覆盖比例低于阈值的实体执行共现激活，确保召回的是与查询真正相关的细粒度 cell。
+  4. **可选补充：时间邻近性约束**：对共现召回的候选 cell，增加与原始命中 cell 的 `timestamp_start` 时间差限制（如 ±2 小时），避免跨越整个会话拉入远古背景 cell。
+- **预期收益**：
+  - 抑制早期通用背景 cell 的无差别混入，为后期含精确答案的细粒度 cell 腾出 prompt 空间。
+  - 在真实多分散实体场景中，该机制可有效防止高频贯穿实体导致的"全表扫描"式召回。
+
 ## Resources
 - 项目仓库：https://github.com/ZhangSongqi0506/session-mem
 - 技术方案文档：`单会话级临时记忆系统（Session-scoped Working Memory）技术方案.md`

@@ -271,25 +271,45 @@ Phase 9
   8. 激活 Cell 数量从刚性 6-7 变为动态 2-8
 
 ### Phase 9.1: 检索召回率修复——BM25 标点清洗 + RRF 权重调整 + Query 停用词过滤
-- **Status:** in_progress
+- **Status:** complete
 - **问题发现（v5 benchmark 分析）**：
   - Session-mem Judge 0.528 vs Baseline 0.549，差距虽小但缺陷高度集中：session-mem 在 `when` 类问题上仅 0.076（baseline 0.182），大量精确事实题回答「文中未提及」。
   - 根因诊断：`hybrid_search.py` 的 BM25 实现存在 **标点未清洗** 的 bug——query token `"birthday?"` 与文档 token `"birthday."` 因标点差异被判定为不匹配，导致包含答案的 cell 在 BM25 路得 0 分。
   - 同时 `MEMORY_SYSTEM_THRESHOLD = 0.015` 过高，对 keyword-only hit（BM25 排名 7+ 但向量路未进前 5）的 cell 产生硬截断，大量事实片段被丢弃。
   - Query 中停用词（`how`, `long`, `ago`, `was`）稀释了有效关键词密度，进一步降低 BM25 召回精度。
 - **修复动作**：
-  1. [ ] **BM25 标点清洗**：在 `keyword_scores()` 中对 query token 和文档 token 统一执行 `re.sub(r'[^\w\s]', '', token)`，消除标点干扰。
-  2. [ ] **提升 BM25 路在 RRF 中的权重**：从当前 `vector_weight=0.75 / keyword_weight=0.25` 调整为 `vector_weight=0.6 / keyword_weight=0.4`，让事实型问题的字面匹配信号获得更强话语权。
-  3. [ ] **Query 停用词过滤**：定义中英文停用词集合，在计算 BM25 前从 query tokens 中剔除 `how/long/ago/was/the/and` 等无意义词，提升关键词匹配密度。
-  4. [ ] **降低 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.015` 降至 `0.008`，允许更多 keyword-only hit 进入候选池。
+  1. [x] **BM25 标点清洗**：在 `keyword_scores()` 中对 query token 和文档 token 统一执行 `re.sub(r'[^\w\s]', '', token)`，消除标点干扰。
+  2. [x] **提升 BM25 路在 RRF 中的权重**：从当前 `vector_weight=0.75 / keyword_weight=0.25` 调整为 `vector_weight=0.6 / keyword_weight=0.4`，让事实型问题的字面匹配信号获得更强话语权。
+  3. [x] **Query 停用词过滤**：定义中英文停用词集合，在计算 BM25 前从 query tokens 中剔除 `how/long/ago/was/the/and` 等无意义词，提升关键词匹配密度。
+  4. [x] **降低 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.015` 降至 `0.008`，允许更多 keyword-only hit 进入候选池。
 - **涉及代码**：
   - `src/session_mem/retrieval/hybrid_search.py`（标点清洗、停用词过滤）
   - `src/session_mem/config.py`（RRF 权重、`MEMORY_SYSTEM_THRESHOLD`）
   - `tests/test_retrieval.py`（新增 BM25 标点清洗测试、停用词过滤测试）
 - **验收标准**：
-  1. 构造 query `"birthday?"` 与文档 `"birthday."`，BM25 能正确匹配。
-  2. 全部单元测试通过；black + ruff 通过。
-  3. 计划文件同步更新为 Phase 9.1 并提交 git。
+  1. [x] 构造 query `"birthday?"` 与文档 `"birthday."`，BM25 能正确匹配。
+  2. [x] 全部单元测试通过；black + ruff 通过。
+  3. [x] 计划文件同步更新为 Phase 9.1 并提交 git。
+
+### Phase 9.2: 实体共现激活增加实体特异性过滤
+- **Status:** pending（计划已确立，待后续开发）
+- **问题发现（v5 benchmark 深度分析）**：
+  - 大量早期通用背景 cell（如 C_001、C_010）在 v5 中被激活了 **80-90%** 的 QA 次数，严重挤占 prompt 空间。
+  - 根因：`memory_system.py` 的实体共现激活机制缺少对"实体 session 频率"的过滤。一旦召回的 cell 包含高频实体（如 `Jon`、`Gina`、`Caroline`、`Melanie`），`find_by_entity()` 就会把会话中**所有**含该实体的 cell 都拉进来。
+  - 在 LoCoMo benchmark 中这一问题被极端放大（仅 2 个固定主角），但真实场景下若出现贯穿始终的高频实体（产品名、项目名、地点），同样会触发通用 cell 的过度召回。
+- **修复方案**：
+  1. **计算实体 session 频率**：在 `retrieve_context()` 的实体共现阶段，先统计当前会话中各实体覆盖的 cell 比例。
+  2. **设定高频实体阈值**：若某实体出现在超过 **50%** 的 cell 中（如主角人名），则不再用它触发 `find_by_entity` 共现扩展。
+  3. **保留低频特异性实体**：仅对覆盖比例低于阈值的实体（如 "Marley flooring"、"Becoming Nicole"、"Pride festival"）执行共现激活，确保召回的是与查询真正相关的细粒度 cell。
+  4. **可选：结合时间邻近性约束**：对通过共现召回的候选 cell，增加与原始命中 cell 的 `timestamp_start` 时间差限制（如 ±2 小时），避免跨越整个会话拉入远古背景 cell。
+- **涉及代码**：
+  - `src/session_mem/core/memory_system.py`（实体共现激活逻辑）
+  - `tests/test_retrieval.py` 或 `tests/test_memory_system.py`（新增高频实体过滤测试）
+- **验收标准**：
+  1. 构造含高频实体（覆盖 >50% cell）的会话，验证该实体不再触发无关早期 cell 的共现激活。
+  2. 构造含低频实体的会话，验证共现激活仍正常工作。
+  3. 全部单元测试通过；black + ruff 通过。
+  4. 计划文件同步更新为 Phase 9.2 并提交 git。
 
 ## Key Questions
 1. ✅ 选择 Python 还是 Node.js 作为主要实现语言？ → **Python**
