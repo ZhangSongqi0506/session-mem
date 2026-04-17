@@ -125,8 +125,6 @@ class MemorySystem:
         if self.hybrid:
             candidate_scores = self.hybrid.search_with_scores(rewritten_query)
 
-        score_map: dict[str, float] = {cid: score for cid, score in candidate_scores}
-
         # 4. 阈值筛选 + 动态上下限
         threshold = RetrievalConfig.MEMORY_SYSTEM_THRESHOLD
         selected_ids = [cid for cid, score in candidate_scores if score >= threshold]
@@ -150,54 +148,33 @@ class MemorySystem:
                 activated.append(cell)
                 seen.add(cell.id)
 
-        # 6. 因果链断裂防护：自动加载 linked_prev 关联 Cell
-        for cell in list(activated):
-            if cell.linked_prev and cell.linked_prev not in seen:
-                prev_cell = self.cell_store.get(cell.linked_prev)
-                if prev_cell:
-                    prev_cell.raw_text = self.text_store.load(prev_cell.id)
-                    activated.append(prev_cell)
-                    seen.add(prev_cell.id)
-
-        # 7. 实体共现激活（优化版：双重门槛）
+        # 6. 实体扩展激活（BM25 替代硬匹配）
         extra_limit = 3
-        entity_candidates: list[tuple[str, float]] = []
-
-        # 收集所有已激活 Cell 的实体
         all_entities: set[str] = set()
         for cell in activated:
             for entity in cell.entities or []:
                 all_entities.add(entity)
 
         if all_entities and self.hybrid:
-            # 收集所有潜在实体共现候选
-            potential_map: dict[str, MemoryCell] = {}
-            for entity in all_entities:
-                for rc in self.cell_store.find_by_entity(self.session_id, entity):
-                    if rc.id not in seen:
-                        potential_map[rc.id] = rc
-
-            if potential_map:
-                keyword_score_map = self.hybrid.keyword_scores(
-                    rewritten_query, list(potential_map.values())
-                )
-                for rc_id, rc in potential_map.items():
-                    k_score = keyword_score_map.get(rc_id, 0.0)
-                    f_score = score_map.get(rc_id, 0.0)
-                    if k_score > 0 and f_score >= RetrievalConfig.MEMORY_SYSTEM_THRESHOLD:
-                        entity_candidates.append((rc_id, f_score))
-
-            # 去重并按 fused_score 降序，取前 extra_limit
-            entity_candidates = sorted(
-                dict(entity_candidates).items(), key=lambda x: x[1], reverse=True
-            )[:extra_limit]
-
-            for cid, _ in entity_candidates:
-                cell = self.cell_store.get(cid)
-                if cell and cell.id not in seen:
-                    cell.raw_text = self.text_store.load(cid)
-                    activated.append(cell)
-                    seen.add(cell.id)
+            expansion_query = " ".join(all_entities)
+            # 收集未入选的候选 cell，并回填 raw_text 供 BM25 计算
+            session_cells = self.cell_store.list_by_session(self.session_id)
+            candidates: list[MemoryCell] = []
+            for c in session_cells:
+                if c.id not in seen:
+                    c.raw_text = self.text_store.load(c.id) or ""
+                    candidates.append(c)
+            if candidates:
+                bm25_scores = self.hybrid.keyword_scores(expansion_query, candidates)
+                # 按 BM25 得分排序，取前 extra_limit
+                sorted_candidates = sorted(bm25_scores.items(), key=lambda x: x[1], reverse=True)
+                for cid, score in sorted_candidates[:extra_limit]:
+                    if score > 0:
+                        cell = self.cell_store.get(cid)
+                        if cell and cell.id not in seen:
+                            cell.raw_text = self.text_store.load(cid)
+                            activated.append(cell)
+                            seen.add(cell.id)
 
         # 8. 按 timestamp_start 升序排列 activated cells，恢复自然叙事顺序
         activated.sort(key=lambda c: (c.timestamp_start is None, c.timestamp_start or ""))

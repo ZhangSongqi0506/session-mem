@@ -190,13 +190,18 @@
 - **预期收益**：修复后 `when` 类和精确事实题的召回率应显著提升，缩小与 baseline 在 0.021 差距上的最后一块短板。
 - **benchmark 策略**：9.1 代码修改完成并提交 git 后，不再单独跑一轮 benchmark。待 9.2 和 9.3 全部完成后，统一跑 **v7 benchmark** 评估整体效果。
 
-## Phase 9.2: 实体共现激活增加实体特异性过滤（待开发）
-- **Status:** pending
-- **benchmark 策略**：与 9.3 全部完成后统一跑 **v7 benchmark**。
+## Phase 9.2: 实体共现激活改为 BM25 扩展
+- **Status:** complete（代码已修改、测试通过）
+- **实现要点**：
+  1. 废弃 `find_by_entity()` 硬等值匹配，避免高频贯穿实体（如主角人名）触发全表扫描。
+  2. 将已激活 cell 的 entities 拼接成扩展查询（如 `"Jon dance studio Marley flooring"`）。
+  3. 对未入选候选 cell 回填 `raw_text` 后调用 `hybrid_search.keyword_scores()` 进行 BM25 评分。
+  4. BM25 的 IDF 机制天然压低高频实体权重、放大低频特异性实体权重，取 top `extra_limit=3` 加入激活列表。
+- **benchmark 策略**：与 9.3 一并完成后统一跑 **v7 benchmark**。
 
 ## Phase 9.3: 移除 linked_prev 因果链断裂防护
-- **Status:** pending
-- **benchmark 策略**：与 9.2 全部完成后统一跑 **v7 benchmark**。
+- **Status:** complete（代码已修改、测试通过）
+- **benchmark 策略**：与 9.2 一并完成后统一跑 **v7 benchmark**。
 - **决策背景**：
   - 当前 `memory_system.py:retrieve_context()` 中命中 Cell 后会无条件加载其 `linked_prev` 前驱 Cell。该机制在 LoCoMo benchmark 中频繁将早期通用背景 Cell 拉入 Working Memory，挤占后期含精确答案 Cell 的空间。
   - `causal_deps` 字段虽已定义但从未启用，单层 `linked_prev` 的防护效果有限，反而成为噪声 Cell 的混入通道。

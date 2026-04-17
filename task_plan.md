@@ -292,12 +292,22 @@ Phase 9
   3. [x] 计划文件同步更新为 Phase 9.1 并提交 git。
 
 ### Phase 9.2: 实体共现激活改为 BM25 扩展
-- **Status:** pending（计划已确立，待后续开发）
-- **备注**：9.1 代码修改完成后不再单独跑 benchmark。本 Phase 与 9.3 全部完成后，统一跑 **v7 benchmark** 验证整体效果。
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **代码变更**：
+  1. `src/session_mem/core/memory_system.py`：废弃 `find_by_entity()` 硬匹配，改为将已激活 cell 的 entities 拼接成扩展查询，对未入选 cell 调用 `hybrid_search.keyword_scores()` 做 BM25 评分。
+  2. 实体扩展前为候选 cell 回填 `raw_text`，确保 BM25 能基于原文计算。
+  3. 按 BM25 得分降序取前 `extra_limit=3` 加入激活列表。
+- **涉及代码**：
+  - `src/session_mem/core/memory_system.py`
+  - `tests/test_retrieval.py`（新增 `test_retrieve_context_bm25_entity_expansion_filters_high_freq`）
+- **验收标准**：
+  1. [x] 构造含高频实体（覆盖 >50% cell）的会话，验证该实体不再触发无关早期 cell 的共现激活。
+  2. [x] 构造含低频实体的会话，验证 BM25 实体扩展仍能召回相关细粒度 cell。
+  3. [x] 全部单元测试通过；black + ruff 通过。
 
 ### Phase 9.3: 移除 linked_prev 因果链断裂防护
-- **Status:** pending（计划已确立，待后续开发）
-- **备注**：与 9.2 并行或在其后实施，全部完成后统一跑 **v7 benchmark**。
+- **Status:** complete（代码已修改、测试通过、已提交 git）
+- **备注**：与 9.2 一并完成，全部完成后统一跑 **v7 benchmark**。
 - **决策**：在检索阶段暂时移除 `linked_prev` 自动回溯逻辑。
 - **原因**：
   1. 当前实现为**无条件单层回溯**，长链会话中容易拉入与查询弱相关的前序 Cell，挤占 prompt 空间。

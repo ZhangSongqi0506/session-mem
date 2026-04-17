@@ -22,21 +22,31 @@
   5. 运行验证：全部测试通过；`black` + `ruff` 通过；提交 git `e308632`。
 
 ### Phase 9.2: 实体共现激活改为 BM25 扩展
-- **Status:** pending（计划已确立，代码未开发）
-- **问题发现**：
-  - v5 benchmark 中早期通用背景 cell 被过度激活：C_010（92.4%）、C_001（86.7%）、C_006（87.9%）。
-  - 根因：`memory_system.py` 的实体共现激活对高频贯穿实体（如主角人名）无过滤，`find_by_entity()` 实质上变成了全表扫描。
-- **计划方案**：
-  1. **废弃 `find_by_entity` 的硬匹配逻辑**：不再遍历每个实体去数据库做等值查询。
-  2. **改用 BM25 做实体扩展**：将当前已激活 cell 的 entities 拼接成扩展查询（如 `"Jon dance studio Marley flooring"`），对未入选的候选 cell 调用 `hybrid_search.keyword_scores()` 进行 BM25 评分。
-  3. **取 top `extra_limit` 加入激活列表**：BM25 的 IDF 机制会天然压低高频实体（如 `Jon`）的权重，同时放大低频特异性实体（如 `Marley flooring`）的提权效果，无需硬编码 50% 阈值。
-- **Next step**：Phase 9.1 代码已修改完成并提交 git（`e308632`），不再单独跑 benchmark 验证。待 Phase 9.2 和 9.3 全部完成后，统一跑 **v7 benchmark** 评估整体效果。
+- **Status:** complete（代码已修改、测试通过）
+- **Actions taken:**
+  1. 修改 `src/session_mem/core/memory_system.py`：
+     - 废弃 `find_by_entity()` 硬匹配逻辑，删除双重门槛过滤代码。
+     - 将已激活 cell 的 entities 去重后拼接为 `expansion_query`（如 `"Jon dance studio Marley flooring"`）。
+     - 对未入选候选 cell 回填 `raw_text` 后调用 `hybrid_search.keyword_scores()` 进行 BM25 评分。
+     - 按 BM25 得分降序取前 `extra_limit=3` 加入 `activated_cells`。
+  2. 更新 `tests/test_retrieval.py`：
+     - 新增 `test_retrieve_context_bm25_entity_expansion_filters_high_freq`：构造高频实体 "Jon" 覆盖多数 cell 的会话，验证 BM25 扩展优先召回含低频特异性实体（"dance studio"）的细粒度 cell，而非无条件涌入全部通用背景 cell。
+  3. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `src/session_mem/core/memory_system.py`
+  - `tests/test_retrieval.py`
 
 ### Phase 9.3: 移除 linked_prev 因果链断裂防护
-- **Status:** pending（计划已写入三个计划文件）
-- **决策**：暂时移除 `memory_system.py:retrieve_context()` 中无条件加载 `linked_prev` 前驱 Cell 的逻辑。
-- **原因**：单层无条件回溯易引入弱相关早期 Cell，挤压真正含答案的后期 Cell；`causal_deps` 未启用，当前防护价值有限。
-- **Next step**：与 Phase 9.2 并行或在其后实施。待 9.2 和 9.3 均完成后统一跑 **v7 benchmark**。
+- **Status:** complete（代码已修改、测试通过）
+- **Actions taken:**
+  1. 修改 `src/session_mem/core/memory_system.py`：删除 `retrieve_context()` 中无条件加载 `linked_prev` 前驱 Cell 的代码块（原第 6 节因果链断裂防护）。
+  2. 更新 `tests/test_retrieval.py`：
+     - 将 `test_retrieve_context_loads_linked_prev` 重命名为 `test_retrieve_context_does_not_load_linked_prev`，断言逻辑从 "应加载 C_001" 改为 "不应加载 C_001"。
+  3. 运行验证：全部 **109 个测试通过**；black + ruff 通过。
+- **涉及文件:**
+  - `src/session_mem/core/memory_system.py`
+  - `tests/test_retrieval.py`
+- **Next step**：Phase 9.1 / 9.2 / 9.3 代码均已完成，统一跑 **v7 benchmark** 评估整体效果。
 
 ## Session: 2026-04-16
 

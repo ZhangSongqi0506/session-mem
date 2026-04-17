@@ -414,7 +414,8 @@ class TestMemorySystemRetrieveContext:
         )
         backend.close()
 
-    def test_retrieve_context_loads_linked_prev(self):
+    def test_retrieve_context_does_not_load_linked_prev(self):
+        """Phase 9.3: 移除 linked_prev 无条件回溯。"""
         from session_mem.core.memory_system import MemorySystem
         from session_mem.storage.sqlite_backend import SQLiteBackend
         import tempfile
@@ -451,7 +452,6 @@ class TestMemorySystemRetrieveContext:
         backend.cell_store.save(curr_cell)
         backend.text_store.save(curr_cell.id, curr_cell.raw_text, curr_cell.token_count)
 
-        # hybrid will find C_002 via keyword scan
         ms = MemorySystem(
             session_id="s1",
             llm_client=FakeLLMClient(),
@@ -466,7 +466,88 @@ class TestMemorySystemRetrieveContext:
         wm = ms.retrieve_context("plan", hot_zone_turns=2, top_k=2)
         ids = {c.id for c in wm.activated_cells}
         assert "C_002" in ids
-        assert "C_001" in ids
+        assert "C_001" not in ids
+        backend.close()
+
+    def test_retrieve_context_bm25_entity_expansion_filters_high_freq(self):
+        """Phase 9.2: BM25 实体扩展应通过 IDF 天然过滤高频贯穿实体，避免无关早期 cell 混入。"""
+        from session_mem.core.memory_system import MemorySystem
+        from session_mem.storage.sqlite_backend import SQLiteBackend
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        backend = SQLiteBackend(db_path)
+        # 高频通用背景 cell（含 Jon，不含 dance studio）
+        generic_cells = []
+        for i in range(4):
+            c = MemoryCell(
+                id=f"C_G{i}",
+                session_id="s1",
+                cell_type="fact",
+                confidence=1.0,
+                summary=f"Jon generic {i}",
+                keywords=["jon"],
+                entities=[],
+                raw_text=f"Jon likes many things in life {i}.",
+                token_count=6,
+            )
+            generic_cells.append(c)
+
+        # 命中 cell：被查询直接命中，含高频实体 Jon 和低频实体 dance studio
+        hit_cell = MemoryCell(
+            id="C_HIT",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="Jon studio",
+            keywords=["jon", "studio"],
+            entities=["Jon", "dance studio"],
+            raw_text="Jon opened a dance studio.",
+            token_count=5,
+        )
+
+        # 细粒度相关 cell：不含查询词 studio，但含低频实体 dance studio
+        # 应通过 BM25 实体扩展被召回
+        specific_cell = MemoryCell(
+            id="C_SPEC",
+            session_id="s1",
+            cell_type="fact",
+            confidence=1.0,
+            summary="flooring detail",
+            keywords=["flooring"],
+            entities=["dance studio"],
+            raw_text="The dance studio has Marley flooring.",
+            token_count=6,
+        )
+
+        for c in generic_cells + [hit_cell, specific_cell]:
+            backend.cell_store.save(c)
+            backend.text_store.save(c.id, c.raw_text, c.token_count)
+
+        ms = MemorySystem(
+            session_id="s1",
+            llm_client=FakeLLMClient(),
+            vector_index=backend.vector_index,
+            cell_store=backend.cell_store,
+            text_store=backend.text_store,
+            meta_cell_store=backend,
+            query_rewriter=QueryRewriter(llm_client=None),
+        )
+        ms.add_turn("user", "Tell me about studio.", "2026-04-14T10:00:00Z")
+
+        # 查询 "studio" 应通过 keyword 路命中 C_HIT
+        wm = ms.retrieve_context("studio", hot_zone_turns=2, top_k=2)
+        ids = {c.id for c in wm.activated_cells}
+
+        # C_HIT 必须被命中
+        assert "C_HIT" in ids
+        # C_SPEC 应通过 BM25 实体扩展（dance studio 是低频实体）被召回
+        assert "C_SPEC" in ids
+        # 通用背景 cell 不应全部涌入（extra_limit=3，C_SPEC 占 1 席，最多再进 2 个 generic）
+        generic_ids = {c.id for c in generic_cells}
+        assert len(ids & generic_ids) <= 2, f"Too many generic cells activated: {ids & generic_ids}"
         backend.close()
 
     def test_retrieve_context_activates_entity_cooccurrence(self):
