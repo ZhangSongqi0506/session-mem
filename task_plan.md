@@ -336,29 +336,46 @@ Phase 9
   2. 全部单元测试通过；black + ruff 通过。
   3. 计划文件同步更新为 Phase 9.3 并提交 git。
 
-### Phase 9.4: 检索阈值与上限修复——抑制低分干扰 Cell 涌入
+### Phase 9.4: 检索阈值修复 + 时间戳机制整顿
 - **Status:** pending（问题已定位，待开发）
-- **v7 benchmark 诊断结论**：
-  - SM Judge 0.479 vs Baseline 0.560，差距 **0.081**（v5 仅 0.022），核心指标严重恶化。
-  - 激活 Cell 数量**刚性化**为 8-10 个（82.6% 恰好 8 个），动态调节能力完全丧失。
-  - SM 零分但 Baseline ≥ 0.5 的案例增至 **57/304**。
-- **根因**：
-  1. `MEMORY_SYSTEM_THRESHOLD = 0.008`（Phase 9.1 修改）过低，RRF 分数尺度下几乎无门槛，所有候选均通过 threshold，直接顶满 `max_cells = 8`。
-  2. `max_cells = 8` 过高，强迫系统在高分相关 cell 之外再引入 5-6 个低分干扰 cell，LLM 被噪声淹没。
-  3. 9.2 的 BM25 实体扩展虽然抑制了通用 cell（激活率下降 24%-43%），但 threshold 过低导致这些 cell 仍因"凑数"被大量召回。
-- **修复方案**：
-  1. **提高 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.008` 恢复至 `0.015`（v5 值）或更高（如 `0.020`），恢复 threshold 对低分候选的截断能力。
-  2. **降低 `max_cells` 上限**：从 `8` 降至 `6` 或 `7`，减少弱相关 cell 的混入空间。
-  3. **可选：重新评估 9.3 移除 `linked_prev` 的影响**：若 v7 中因果/跨 Cell 问题零分率异常高，考虑恢复带门槛的 `linked_prev` 加载。
+- **Part A: 检索阈值与上限修复**
+  - **v7 诊断结论**：SM Judge 0.479 vs Baseline 0.560，差距 **0.081**（v5 仅 0.022）；激活 Cell 刚性化为 8-10 个（82.6% 恰好 8 个）。
+  - **根因**：`MEMORY_SYSTEM_THRESHOLD = 0.008` 过低 + `max_cells = 8` 过高，导致低分干扰 Cell 大量涌入。
+  - **修复动作**：
+    1. **提高 `MEMORY_SYSTEM_THRESHOLD`**：从 `0.008` 恢复至 `0.015`（v5 值）或更高（如 `0.018`）。
+    2. **降低 `max_cells` 上限**：从 `8` 降至 `6` 或 `7`，恢复弹性。
+    3. **可选：重新评估 9.3 移除 `linked_prev` 的影响**：若因果链问题零分率异常高，考虑恢复带门槛的 `linked_prev`。
+
+- **Part B: 时间戳机制整顿**
+  - **问题发现**：v7 中出现大量时间戳为 `2026-04-17`（即当前运行日期）的 Cell，原因是 `data_loader.py` 在 session date 解析失败时 fallback 到 `datetime.now()`。
+  - **时间语义澄清**：
+    1. **对话发生时间**（Conversation Time）：由 session 的 `session_x_date_time` 决定，每个 turn 都应有此时间戳。Cell 的 `timestamp_start` / `timestamp_end` 必须严格对应此时间。
+    2. **对话中提到的时间**（Mentioned Time）：存在于 turn text 中的相对/绝对时间（如 "last month"、"next Friday"、"May 7th"）。当前系统未提取，导致 LLM 无法准确回答时间类问题。
+  - **修复方案**：
+    1. **修复 benchmark 时间戳 fallback**：
+       - `data_loader.py`：将 `datetime.now()` fallback 替换为固定基准日期（如 `2023-05-01T00:00:00+00:00`），与 LoCoMo 真实时间对齐。
+       - 增加解析失败时的 warning 日志，便于排查数据质量问题。
+    2. **提取并归一化对话中提到的时间**：
+       - 新建轻量级时间提取器（regex + `dateparser` 规则），扫描每个 turn 的 text。
+       - 将提取到的时间归一化为 ISO 8601 格式，作为 `mentioned_time` 写入 turn 的 metadata。
+       - 在 `CellGenerator` 生成 Cell 时，将 `mentioned_time` 列表写入 `MemoryCell.metadata["mentioned_times"]`。
+       - 在 `WorkingMemory.to_prompt()` 中，若 Cell 包含 `mentioned_times`，在时间戳前缀后追加 `[Mentioned: ...]` 提示，帮助 LLM 区分"对话发生时间"和"事件时间"。
+
 - **涉及代码**：
   - `src/session_mem/config.py`（`MEMORY_SYSTEM_THRESHOLD`）
   - `src/session_mem/core/memory_system.py`（`max_cells` 计算逻辑）
+  - `benchmarks/data_loader.py`（fallback 修复）
+  - `src/session_mem/core/buffer.py`（`Turn` 增加 `metadata` 字段）
+  - `src/session_mem/core/cell_generator.py`（`mentioned_times` 透传）
+  - `src/session_mem/core/working_memory.py`（Prompt 组装增加 mentioned_times 提示）
+  - 新增 `src/session_mem/utils/time_extractor.py`（可选：若 `dateparser` 太复杂，可先用手工 regex 版本）
 - **验收标准**：
-  1. v7 benchmark 重跑后（v8）激活 Cell 数量分布恢复弹性（不再刚性 8-10 个）。
-  2. SM Judge 与 Baseline 差距缩小至 ≤0.05。
-  3. Token 节省率保持 ≥40%。
-  4. 全部单元测试通过；black + ruff 通过。
-  5. 计划文件同步更新并提交 git。
+  1. benchmark 生成的 Cell 时间戳不再出现 `2026-04-17` 等当前日期。
+  2. 抽样检查 `mentioned_times` 能正确提取 "last month"、"next Friday" 等相对时间。
+  3. v8 benchmark 激活 Cell 数量分布恢复弹性（不再刚性 8-10 个）。
+  4. SM Judge 与 Baseline 差距缩小至 ≤0.05。
+  5. Token 节省率保持 ≥40%。
+  6. 全部单元测试通过；black + ruff 通过。
 
 - **问题发现（v5 benchmark 深度分析）**：
   - 大量早期通用背景 cell（如 C_001、C_010）在 v5 中被激活了 **80-90%** 的 QA 次数，严重挤占 prompt 空间。

@@ -71,9 +71,11 @@
   2. **`max_cells = 8` 过高**：强迫系统在 2-3 个高分相关 cell 之外，再拉入 5-6 个低分干扰 cell，LLM 被噪声淹没。
   3. **9.2 的 BM25 实体扩展确实有效抑制了通用 cell**（C_001/C_002/C_006 激活率比 v5 下降 24%-43%），但 threshold 过低导致这些被抑制的 cell 仍因"凑数"被大量召回。
   4. **when 类问题**（67 题）Baseline 0.179，SM 0.105，差距 0.074；9.1 的标点清洗和停用词过滤效果被整体噪声掩盖。
-- **修复方向（拟定 Phase 9.4）**：
-  1. 提高 `MEMORY_SYSTEM_THRESHOLD`：从 0.008 恢复到 0.015 或更高。
-  2. 降低 `max_cells` 上限：从 8 降至 6 或 7。
+- **修复方向（已规划为 Phase 9.4）**：
+  1. **检索阈值修复**：`MEMORY_SYSTEM_THRESHOLD` 0.008 → 0.015/0.018；`max_cells` 8 → 6/7。
+  2. **时间戳机制整顿**：
+     - 修复 `data_loader.py` fallback 到 `now()` 的 bug，改用固定基准日期。
+     - 提取 turn text 中"提到的时间"并归一化，作为 `MemoryCell.metadata` 注入 Prompt，帮助 LLM 区分"对话发生时间"与"事件时间"。
   3. 必要时重新评估 9.3 移除 `linked_prev` 的影响。
 
 ## Session: 2026-04-16

@@ -235,10 +235,11 @@
   2. **`max_cells = 8` 过高**：当会话 cell 总数 24+ 时，`max_cells = max(min_cells+1, min(8, total_cells//3))` 固定为 8，强迫系统引入低分干扰项。
   3. **Phase 9.3 移除 `linked_prev`**：部分需要前序因果上下文的查询（如跨 Cell 约束）失去支撑，可能小幅加剧零分率。
 
-- **修复方向（拟定 Phase 9.4）**：
-  1. **提高 `MEMORY_SYSTEM_THRESHOLD`**：从 0.008 至少恢复到 0.015（v5 值），或进一步提高到 0.020，恢复动态调节能力。
-  2. **降低 `max_cells` 上限**：从 8 降至 6 或 7，减少低分干扰 Cell 的混入空间。
-  3. **考虑将实体扩展与主阈值联动**：如果 top 候选的 RRF 分数已经很低，即使 threshold 通过，也应减少 max_cells 上限，避免"为凑数而凑数"。
+- **修复方向（Phase 9.4 已规划）**：
+  1. **检索阈值修复**：提高 `MEMORY_SYSTEM_THRESHOLD`（0.008 → 0.015/0.018），降低 `max_cells`（8 → 6/7），恢复动态调节能力。
+  2. **时间戳机制整顿**：
+     - 修复 `data_loader.py` 的 `datetime.now()` fallback 为固定基准日期，保证 Cell 时间戳反映真实对话发生时间。
+     - 新增轻量级时间提取器，从 turn text 中提取并归一化"对话中提到的时间"（如 "last month" → ISO），写入 `MemoryCell.metadata`，并在 Prompt 中显式提示，解决时间类问题的信息混淆。
 
 ## Phase 9.3: 移除 linked_prev 因果链断裂防护
 - **Status:** complete（代码已修改、测试通过）
