@@ -291,23 +291,23 @@ Phase 9
   2. [x] 全部单元测试通过；black + ruff 通过。
   3. [x] 计划文件同步更新为 Phase 9.1 并提交 git。
 
-### Phase 9.2: 实体共现激活增加实体特异性过滤
+### Phase 9.2: 实体共现激活改为 BM25 扩展
 - **Status:** pending（计划已确立，待后续开发）
 - **问题发现（v5 benchmark 深度分析）**：
   - 大量早期通用背景 cell（如 C_001、C_010）在 v5 中被激活了 **80-90%** 的 QA 次数，严重挤占 prompt 空间。
-  - 根因：`memory_system.py` 的实体共现激活机制缺少对"实体 session 频率"的过滤。一旦召回的 cell 包含高频实体（如 `Jon`、`Gina`、`Caroline`、`Melanie`），`find_by_entity()` 就会把会话中**所有**含该实体的 cell 都拉进来。
+  - 根因：`memory_system.py` 的实体共现激活机制使用 `find_by_entity()` 做硬等值匹配：一旦召回 cell 的 entities 中包含高频实体（如 `Jon`、`Gina`），系统就会把会话中**所有**含该实体的 cell 都拉进来，实质上变成了全表扫描。
   - 在 LoCoMo benchmark 中这一问题被极端放大（仅 2 个固定主角），但真实场景下若出现贯穿始终的高频实体（产品名、项目名、地点），同样会触发通用 cell 的过度召回。
 - **修复方案**：
-  1. **计算实体 session 频率**：在 `retrieve_context()` 的实体共现阶段，先统计当前会话中各实体覆盖的 cell 比例。
-  2. **设定高频实体阈值**：若某实体出现在超过 **50%** 的 cell 中（如主角人名），则不再用它触发 `find_by_entity` 共现扩展。
-  3. **保留低频特异性实体**：仅对覆盖比例低于阈值的实体（如 "Marley flooring"、"Becoming Nicole"、"Pride festival"）执行共现激活，确保召回的是与查询真正相关的细粒度 cell。
-  4. **可选：结合时间邻近性约束**：对通过共现召回的候选 cell，增加与原始命中 cell 的 `timestamp_start` 时间差限制（如 ±2 小时），避免跨越整个会话拉入远古背景 cell。
+  1. **废弃 `find_by_entity` 硬匹配**：不再逐个实体去数据库做等值查询。
+  2. **改用 BM25 做实体扩展**：将当前已激活 cell 的 entities 去重后拼接成扩展查询（如 `"Jon dance studio Marley flooring"`），对未入选的候选 cell 调用 `hybrid_search.keyword_scores()` 进行 BM25 评分。
+  3. **BM25 IDF 天然过滤高频实体**：高频贯穿实体（如 `Jon`）因出现在绝大多数 cell 中，IDF 极低，对 BM25 贡献微弱；低频特异性实体（如 `Marley flooring`）IDF 高，能显著提权相关 cell。
+  4. **取 top `extra_limit` 加入激活列表**：按 BM25 得分排序，取前 N 个最优候选，避免早期通用 cell 大规模混入。
 - **涉及代码**：
-  - `src/session_mem/core/memory_system.py`（实体共现激活逻辑）
-  - `tests/test_retrieval.py` 或 `tests/test_memory_system.py`（新增高频实体过滤测试）
+  - `src/session_mem/core/memory_system.py`（实体共现激活逻辑重构）
+  - `tests/test_retrieval.py` 或 `tests/test_memory_system.py`（新增 BM25 实体扩展测试）
 - **验收标准**：
   1. 构造含高频实体（覆盖 >50% cell）的会话，验证该实体不再触发无关早期 cell 的共现激活。
-  2. 构造含低频实体的会话，验证共现激活仍正常工作。
+  2. 构造含低频实体的会话，验证 BM25 实体扩展仍能召回相关细粒度 cell。
   3. 全部单元测试通过；black + ruff 通过。
   4. 计划文件同步更新为 Phase 9.2 并提交 git。
 
